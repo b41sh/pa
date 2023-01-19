@@ -70,7 +70,11 @@ pub fn read_meta<Reader: Read + Seek>(reader: &mut Reader) -> Result<Vec<ColumnM
         for _p in 0..page_num {
             let length = read_u64(&mut buf_reader)?;
             let num_values = read_u64(&mut buf_reader)?;
-            pages.push(PageMeta { length, num_values });
+
+            pages.push(PageMeta {
+                length,
+                num_values,
+            });
         }
         metas.push(ColumnMeta { offset, pages })
     }

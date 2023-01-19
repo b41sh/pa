@@ -12,10 +12,320 @@ use arrow::{
     array::*, bitmap::Bitmap, datatypes::PhysicalType, trusted_len::TrustedLen, types::NativeType,
 };
 
+use arrow::io::parquet::write::Nested;
+use arrow::io::parquet::write::ListNested;
+use arrow::io::parquet::write::Version;
+use arrow::io::parquet::write::write_def_levels;
+use arrow::io::parquet::write::slice_nested_leaf;
+use arrow::io::parquet::write::write_rep_and_def;
+
+use arrow::io::parquet::write::ParquetType;
+use arrow::io::parquet::write::ParquetPrimitiveType;
+
+use arrow::io::parquet::read::schema::is_nullable;
+
+
+
 use crate::with_match_primitive_type;
 
 use crate::compression;
 use crate::Compression;
+
+
+
+
+/**
++-------------------+
+|  rep levels len   |
++-------------------+
+|  def levels len   |
++-------------------+
+|  def/def values   |
++-------------------+
+|    codec type     |
++-------------------+
+|  compressed size  |
++-------------------+
+| uncompressed size |
++-------------------+
+|     values        |
++-------------------+
+*/
+pub fn write<W: Write>(
+    w: &mut W,
+    array: &dyn Array,
+    nested: &[Nested],
+    type_: ParquetPrimitiveType,
+    compression: Compression,
+    scratch: &mut Vec<u8>,
+) -> Result<()> {
+    println!("\nnested.len()={:?}", nested.len());
+    if nested.len() == 1 {
+        return write_simple(
+            w,
+            array,
+            type_,
+            compression,
+            scratch,
+        );
+    }
+    write_nested(
+        w,
+        array,
+        nested,
+        type_,
+        compression,
+        scratch,
+    )
+}
+
+/// Writes an [`Array`] to `arrow_data`
+pub fn write_simple<W: Write>(
+    w: &mut W,
+    array: &dyn Array,
+    type_: ParquetPrimitiveType,
+    compression: Compression,
+    scratch: &mut Vec<u8>,
+) -> Result<()> {
+    let is_optional = is_nullable(&type_.field_info);
+
+    use PhysicalType::*;
+    match array.data_type().to_physical_type() {
+        Null => {},
+        Boolean => {
+            let array: &BooleanArray = array.as_any().downcast_ref().unwrap();
+            write_validity::<W>(
+                w,
+                is_optional,
+                array.validity(),
+                array.len(),
+                scratch,
+            )?;
+            write_boolean::<W>(
+                w,
+                array,
+                compression,
+                scratch,
+            )?;
+        }
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+            let array: &PrimitiveArray<$T> = array.as_any().downcast_ref().unwrap();
+            write_validity::<W>(
+                w,
+                is_optional,
+                array.validity(),
+                array.len(),
+                scratch,
+            )?;
+            write_primitive::<$T, W>(w, array, compression, scratch)?;
+        }),
+        Binary => {
+            let array: &BinaryArray<i32> = array.as_any().downcast_ref().unwrap();
+            write_validity::<W>(
+                w,
+                is_optional,
+                array.validity(),
+                array.len(),
+                scratch,
+            )?;
+            write_binary::<i32, W>(
+                w,
+                array,
+                compression,
+                scratch,
+            )?;
+        }
+        LargeBinary => {
+            let array: &BinaryArray<i64> = array.as_any().downcast_ref().unwrap();
+            write_validity::<W>(
+                w,
+                is_optional,
+                array.validity(),
+                array.len(),
+                scratch,
+            )?;
+
+            write_binary::<i64, W>(
+                w,
+                array,
+                compression,
+                scratch,
+            )?;
+        }
+        Utf8 => {
+            let array: &Utf8Array<i32> = array.as_any().downcast_ref().unwrap();
+            write_validity::<W>(
+                w,
+                is_optional,
+                array.validity(),
+                array.len(),
+                scratch,
+            )?;
+
+            write_utf8::<i32, W>(
+                w,
+                array,
+                compression,
+                scratch,
+            )?;
+        }
+        LargeUtf8 => {
+            let array: &Utf8Array<i64> = array.as_any().downcast_ref().unwrap();
+            write_validity::<W>(
+                w,
+                is_optional,
+                array.validity(),
+                array.len(),
+                scratch,
+            )?;
+
+            write_utf8::<i64, W>(
+                w,
+                array,
+                compression,
+                scratch,
+            )?;
+        }
+        Struct => unimplemented!(),
+        List => unimplemented!(),
+        FixedSizeList => unimplemented!(),
+        Dictionary(_key_type) => unimplemented!(),
+        Union => unimplemented!(),
+        Map => unimplemented!(),
+        _ => todo!(),
+    }
+
+    Ok(())
+}
+
+
+pub fn write_nested<W: Write>(
+    w: &mut W,
+    array: &dyn Array,
+    nested: &[Nested],
+    type_: ParquetPrimitiveType,
+    compression: Compression,
+    scratch: &mut Vec<u8>,
+) -> Result<()> {
+    println!("\n-----nested={:?}", nested);
+    println!("array.data_type()={:?}", array.data_type());
+
+    let is_optional = is_nullable(&type_.field_info);
+
+    // we slice the leaf by the offsets as dremel only computes lengths and thus
+    // does NOT take the starting offset into account.
+    // By slicing the leaf array we also don't write too many values.
+    let (start, len) = slice_nested_leaf(nested);
+    println!("start={:?}", start);
+    println!("len={:?}", len);
+
+    // 3. 写入 rep_levels 和 def_levels
+    write_nested_validity::<W>(
+        w,
+        nested,
+        start,
+        scratch,
+    )?;
+
+    let array = array.slice(start, len);
+
+    use PhysicalType::*;
+    match array.data_type().to_physical_type() {
+        Null => {},
+        Boolean => write_boolean::<W>(
+            w,
+            array.as_any().downcast_ref().unwrap(),
+            compression,
+            scratch,
+        )?,
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+            let array = array.as_any().downcast_ref().unwrap();
+            write_primitive::<$T, W>(w, array, compression, scratch)?;
+        }),
+        Binary => write_binary::<i32, W>(
+            w,
+            array.as_any().downcast_ref().unwrap(),
+            compression,
+            scratch,
+        )?,
+        LargeBinary => write_binary::<i64, W>(
+            w,
+            array.as_any().downcast_ref().unwrap(),
+            compression,
+            scratch,
+        )?,
+        Utf8 => write_utf8::<i32, W>(
+            w,
+            array.as_any().downcast_ref().unwrap(),
+            compression,
+            scratch,
+        )?,
+        LargeUtf8 => write_utf8::<i64, W>(
+            w,
+            array.as_any().downcast_ref().unwrap(),
+            compression,
+            scratch,
+        )?,
+        Struct => unimplemented!(),
+        List => unimplemented!(),
+        FixedSizeList => unimplemented!(),
+        Dictionary(_key_type) => unimplemented!(),
+        Union => unimplemented!(),
+        Map => unimplemented!(),
+        _ => todo!(),
+    }
+
+    Ok(())
+}
+
+
+fn write_validity<W: Write>(
+    w: &mut W,
+    is_optional: bool,
+    validity: Option<&Bitmap>,
+    len: usize,
+    scratch: &mut Vec<u8>,
+) -> Result<()> {
+    scratch.clear();
+    write_def_levels(scratch, is_optional, validity, len, Version::V2)?;
+    let rep_levels_len = 0;
+    let def_levels_len = scratch.len();
+
+    println!("\n\n----------scratch={:?}", scratch);
+    println!("rep_levels_len={:?}", rep_levels_len);
+    println!("def_levels_len={:?}", def_levels_len);
+
+    w.write_all(&(rep_levels_len as u32).to_le_bytes())?;
+    w.write_all(&(def_levels_len as u32).to_le_bytes())?;
+    w.write_all(&scratch[..def_levels_len])?;
+
+    Ok(())
+}
+
+fn write_nested_validity<W: Write>(
+    w: &mut W,
+    nested: &[Nested],
+    start: usize,
+    scratch: &mut Vec<u8>,
+) -> Result<()> {
+    scratch.clear();
+
+    let (rep_levels_len, def_levels_len) =
+        write_rep_and_def(Version::V2, nested, scratch, start)?;
+
+
+    println!("\n\n----------scratch={:?}", scratch);
+    println!("rep_levels_len={:?}", rep_levels_len);
+    println!("def_levels_len={:?}", def_levels_len);
+
+    w.write_all(&(rep_levels_len as u32).to_le_bytes())?;
+    w.write_all(&(def_levels_len as u32).to_le_bytes())?;
+    w.write_all(&scratch[..scratch.len()])?;
+
+    Ok(())
+}
+
+
 
 fn write_primitive<T: NativeType, W: Write>(
     w: &mut W,
@@ -23,7 +333,6 @@ fn write_primitive<T: NativeType, W: Write>(
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
-    write_validity(w, array.validity(), compression, scratch)?;
     write_buffer(w, array.values(), compression, scratch)
 }
 
@@ -33,21 +342,17 @@ fn write_boolean<W: Write>(
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
-    write_validity(w, array.validity(), compression, scratch)?;
     write_bitmap(w, array.values(), compression, scratch)
 }
 
 #[allow(clippy::too_many_arguments)]
 fn write_generic_binary<O: Offset, W: Write>(
     w: &mut W,
-    validity: Option<&Bitmap>,
     offsets: &[O],
     values: &[u8],
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
-    write_validity(w, validity, compression, scratch)?;
-
     let first = *offsets.first().unwrap();
     let last = *offsets.last().unwrap();
 
@@ -73,7 +378,6 @@ fn write_binary<O: Offset, W: Write>(
 ) -> Result<()> {
     write_generic_binary(
         w,
-        array.validity(),
         array.offsets().as_slice(),
         array.values(),
         compression,
@@ -84,108 +388,16 @@ fn write_binary<O: Offset, W: Write>(
 fn write_utf8<O: Offset, W: Write>(
     w: &mut W,
     array: &Utf8Array<O>,
-
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
     write_generic_binary(
         w,
-        array.validity(),
         array.offsets().as_slice(),
         array.values(),
         compression,
         scratch,
     )
-}
-
-/// Writes an [`Array`] to `arrow_data`
-pub fn write<W: Write>(
-    w: &mut W,
-    array: &dyn Array,
-    compression: Compression,
-    scratch: &mut Vec<u8>,
-) -> Result<()> {
-    use PhysicalType::*;
-    match array.data_type().to_physical_type() {
-        Null => Ok(()),
-        Boolean => write_boolean::<W>(
-            w,
-            array.as_any().downcast_ref().unwrap(),
-            compression,
-            scratch,
-        ),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
-            let array = array.as_any().downcast_ref().unwrap();
-            write_primitive::<$T, W>(w, array, compression, scratch)
-        }),
-        Binary => write_binary::<i32, W>(
-            w,
-            array.as_any().downcast_ref().unwrap(),
-            compression,
-            scratch,
-        ),
-        LargeBinary => write_binary::<i64, W>(
-            w,
-            array.as_any().downcast_ref().unwrap(),
-            compression,
-            scratch,
-        ),
-        Utf8 => write_utf8::<i32, W>(
-            w,
-            array.as_any().downcast_ref().unwrap(),
-            compression,
-            scratch,
-        ),
-        LargeUtf8 => write_utf8::<i64, W>(
-            w,
-            array.as_any().downcast_ref().unwrap(),
-            compression,
-            scratch,
-        ),
-        Struct => {
-            let _ = if let DataType::Struct(children) = array.data_type().to_logical_type() {
-                children
-            } else {
-                unreachable!()
-            };
-            let struct_array: &StructArray = array.as_any().downcast_ref().unwrap();
-            for sub_array in struct_array.values() {
-                write(w, sub_array.as_ref(), compression, scratch)?;
-            }
-            Ok(())
-        }
-        List => {
-            // dbg!(array);
-            let list_array: &ListArray<i32> = array.as_any().downcast_ref().unwrap();
-            let offset = list_array.offsets().to_owned();
-            // write offset num
-            write_primitive::<i32, W>(
-                w,
-                &Int32Array::new(
-                    DataType::Int32,
-                    Buffer::from(vec![offset.len() as i32 + 1]),
-                    None,
-                ),
-                compression,
-                scratch,
-            )?;
-            // write offset
-            write_primitive::<i32, W>(
-                w,
-                &Int32Array::new(DataType::Int32, offset.buffer().to_owned(), None),
-                compression,
-                scratch,
-            )?;
-            // write values
-            write(w, list_array.values().as_ref(), compression, scratch)?;
-            Ok(())
-        }
-        FixedSizeList => unimplemented!(),
-        Dictionary(_key_type) => unimplemented!(),
-        Union => unimplemented!(),
-        Map => unimplemented!(),
-        _ => todo!(),
-    }
 }
 
 /// writes `bytes` to `arrow_data` updating `buffers` and `offset` and guaranteeing a 8 byte boundary.
@@ -219,29 +431,6 @@ fn write_bytes<W: Write>(
     w.write_all(&scratch[..compressed_size])?;
 
     Ok(())
-}
-
-fn write_validity<W: Write>(
-    w: &mut W,
-    bitmap: Option<&Bitmap>,
-    compression: Compression,
-    scratch: &mut Vec<u8>,
-) -> Result<()> {
-    match bitmap {
-        Some(bitmap) => {
-            w.write_all(&[1u8])?;
-            let (slice, slice_offset, _) = bitmap.as_slice();
-            if slice_offset != 0 {
-                // case where we can't slice the bitmap as the offsets are not multiple of 8
-                let bytes = Bitmap::from_trusted_len_iter(bitmap.iter());
-                let (slice, _, _) = bytes.as_slice();
-                write_bytes(w, slice, compression, scratch)
-            } else {
-                write_bytes(w, slice, compression, scratch)
-            }
-        }
-        None => w.write_all(&[0u8]).map_err(|e| e.into()),
-    }
 }
 
 fn write_bitmap<W: Write>(

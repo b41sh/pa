@@ -1,5 +1,6 @@
 //! APIs to write to Arrow's IPC format.
 pub(crate) mod common;
+//mod pages;
 mod serialize;
 pub(crate) mod writer;
 

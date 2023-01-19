@@ -1,7 +1,9 @@
 mod compression;
 mod endianess;
+//mod schema_descriptor;
 
 pub use compression::Compression;
+//pub use schema_descriptor::SchemaDescriptor;
 
 // pub mod read;
 pub mod read;

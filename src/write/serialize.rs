@@ -59,7 +59,7 @@ pub fn write<W: Write>(
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
-    println!("\nnested.len()={:?}", nested.len());
+    //println!("\nnested.len()={:?}", nested.len());
     if nested.len() == 1 {
         return write_simple(
             w,
@@ -207,8 +207,8 @@ pub fn write_nested<W: Write>(
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
-    println!("\n-----nested={:?}", nested);
-    println!("array.data_type()={:?}", array.data_type());
+    //println!("\n-----nested={:?}", nested);
+    //println!("array.data_type()={:?}", array.data_type());
 
     let is_optional = is_nullable(&type_.field_info);
 
@@ -216,8 +216,8 @@ pub fn write_nested<W: Write>(
     // does NOT take the starting offset into account.
     // By slicing the leaf array we also don't write too many values.
     let (start, len) = slice_nested_leaf(nested);
-    println!("start={:?}", start);
-    println!("len={:?}", len);
+    //println!("start={:?}", start);
+    //println!("len={:?}", len);
 
     // 3. 写入 rep_levels 和 def_levels
     write_nested_validity::<W>(
@@ -291,9 +291,9 @@ fn write_validity<W: Write>(
     let rep_levels_len = 0;
     let def_levels_len = scratch.len();
 
-    println!("\n\n----------scratch={:?}", scratch);
-    println!("rep_levels_len={:?}", rep_levels_len);
-    println!("def_levels_len={:?}", def_levels_len);
+    //println!("\n\n----------scratch={:?}", scratch);
+    //println!("rep_levels_len={:?}", rep_levels_len);
+    //println!("def_levels_len={:?}", def_levels_len);
 
     w.write_all(&(rep_levels_len as u32).to_le_bytes())?;
     w.write_all(&(def_levels_len as u32).to_le_bytes())?;
@@ -314,9 +314,9 @@ fn write_nested_validity<W: Write>(
         write_rep_and_def(Version::V2, nested, scratch, start)?;
 
 
-    println!("\n\n----------scratch={:?}", scratch);
-    println!("rep_levels_len={:?}", rep_levels_len);
-    println!("def_levels_len={:?}", def_levels_len);
+    //println!("\n\n----------scratch={:?}", scratch);
+    //println!("rep_levels_len={:?}", rep_levels_len);
+    //println!("def_levels_len={:?}", def_levels_len);
 
     w.write_all(&(rep_levels_len as u32).to_le_bytes())?;
     w.write_all(&(def_levels_len as u32).to_le_bytes())?;

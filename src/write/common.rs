@@ -15,6 +15,9 @@ use super::{write, NativeWriter};
 //use crate::write::pages::to_data_type_leaves;
 //use crate::write::pages::to_leaves;
 
+use arrow::io::parquet::write::get_max_length;
+use arrow::io::parquet::write::slice_parquet_array;
+
 use arrow::io::parquet::write::SchemaDescriptor;
 use arrow::io::parquet::write::to_nested;
 use arrow::io::parquet::write::to_leaves;
@@ -47,37 +50,45 @@ impl<W: Write> NativeWriter<W> {
             let array = array.as_ref();
             let nested = to_nested(array, &type_)?;
             let types = to_parquet_leaves(type_);
-            let values = to_leaves(array);
+            let leaf_arrays = to_leaves(array);
 
-
-
-            for ((values, nested), type_) in values.iter().zip(nested.into_iter()).zip(types.into_iter()) {
-                println!("values={:?}", values);
-                println!("nested={:?}", nested);
-                println!("type_={:?}", type_);
-
-                let num_values = values.len();
+            for ((leaf_array, nested), type_) in leaf_arrays.iter().zip(nested.into_iter()).zip(types.into_iter()) {
+                //println!("leaf_array={:?}", leaf_array);
+                //println!("nested={:?}", nested);
+                //println!("type_={:?}", type_);
 
                 let start = self.writer.offset;
-                let mut page_metas = Vec::with_capacity(array.len() / page_size);
+                let length = get_max_length(leaf_array.as_ref(), &nested);
 
-                // todo read sub page
-                let page_start = self.writer.offset;
-                write(
-                    &mut self.writer,
-                    values.as_ref(),
-                    &nested,
-                    type_,
-                    self.options.compression,
-                    &mut self.scratch,
-                )?;
+                let page_metas: Vec<PageMeta> = (0..length)
+                    .step_by(page_size)
+                    .map(|offset| {
+                        let length = if offset + page_size > length {
+                            length - offset
+                        } else {
+                            page_size
+                        };
 
+                        let (sub_array, sub_nested) =
+                            slice_parquet_array(leaf_array.as_ref(), &nested, offset, length);
 
-                let page_end = self.writer.offset;
-                page_metas.push(PageMeta {
-                    length: (page_end - page_start) as u64,
-                    num_values: num_values as u64,
-                });
+                        let page_start = self.writer.offset;
+                        write(
+                            &mut self.writer,
+                            sub_array.as_ref(),
+                            &sub_nested,
+                            type_.clone(),
+                            self.options.compression,
+                            &mut self.scratch,
+                        ).unwrap();
+
+                        let page_end = self.writer.offset;
+                        PageMeta {
+                            length: (page_end - page_start) as u64,
+                            num_values: length as u64,
+                        }
+                    })
+                    .collect();
 
                 self.metas.push(ColumnMeta {
                     offset: start,

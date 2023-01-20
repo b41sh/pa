@@ -9,6 +9,68 @@ use arrow::io::ipc::read::deserialize_schema;
 use arrow::{array::Array, datatypes::DataType};
 use std::io::{Read, Seek, SeekFrom};
 
+use arrow::io::parquet::read::ColumnDescriptor;
+use arrow::io::parquet::write::ParquetType;
+use arrow::datatypes::Field;
+
+pub struct NnativeReader<R: NativeReadBuf> {
+    reader: R,
+    fields: Vec<Field>,
+    parquet_types: Vec<ParquetType>,
+    leaves: Vec<ColumnDescriptor>,
+    column_metas: Vec<ColumnMeta>,
+    current_column: usize,
+    scratch: Vec<u8>,
+}
+
+/**
+impl<R: NativeReadBuf> NnativeReader<R> {
+    pub fn new(
+        reader: R,
+        fields: Vec<Field>,
+        parquet_types: Vec<ParquetType>,
+        leaves: Vec<ColumnDescriptor>,
+        column_metas: Vec<ColumnMeta>,
+        scratch: Vec<u8>,
+    ) -> Self {
+        Self {
+            reader,
+            fields,
+            parquet_types,
+            leaves,
+            column_metas,
+            current_column: 0,
+            scratch,
+        }
+    }
+
+
+    pub fn has_next(&self) -> bool {
+        self.current_column < self.fields.len()
+    }
+
+    // must call after has_next
+    pub fn next_array(&mut self) -> Result<Box<dyn Array>> {
+        let parquet_type = &self.parquet_types[self.current_page];
+
+
+
+        self.current_column += 1;
+
+        let page = &self.page_metas[self.current_page];
+        let result = deserialize::read(
+            &mut self.reader,
+            self.data_type.clone(),
+            page.num_values as usize,
+            &mut self.scratch,
+        )?;
+        self.current_page += 1;
+        Ok(result)
+    }
+}
+*/
+
+
 pub struct NativeReader<R: NativeReadBuf> {
     reader: R,
     data_type: DataType,
@@ -53,9 +115,11 @@ impl<R: NativeReadBuf> NativeReader<R> {
 
 pub fn read_meta<Reader: Read + Seek>(reader: &mut Reader) -> Result<Vec<ColumnMeta>> {
     // ARROW_MAGIC(6 bytes) + EOS(8 bytes) + meta_size(4 bytes) = 18 bytes
-    reader.seek(SeekFrom::End(-18))?;
+    //reader.seek(SeekFrom::End(-18))?;
+    reader.seek(SeekFrom::End(-12))?;
     let meta_size = read_u32(reader)? as usize;
-    reader.seek(SeekFrom::End(-22 - meta_size as i64))?;
+    //reader.seek(SeekFrom::End(-22 - meta_size as i64))?;
+    reader.seek(SeekFrom::End(-16 - meta_size as i64))?;
 
     let mut buf = vec![0u8; meta_size];
     reader.read_exact(&mut buf)?;
@@ -83,9 +147,13 @@ pub fn read_meta<Reader: Read + Seek>(reader: &mut Reader) -> Result<Vec<ColumnM
 
 pub fn infer_schema<Reader: Read + Seek>(reader: &mut Reader) -> Result<Schema> {
     // ARROW_MAGIC(6 bytes) + EOS(8 bytes) + meta_size(4 bytes) + schema_size(4bytes) = 22 bytes
-    reader.seek(SeekFrom::End(-22))?;
+    //reader.seek(SeekFrom::End(-22))?;
+    reader.seek(SeekFrom::End(-16))?;
     let schema_size = read_u32(reader)? as usize;
     let column_meta_size = read_u32(reader)? as usize;
+    println!("schema_size={:?}", schema_size);
+    println!("column_meta_size={:?}", column_meta_size);
+
 
     reader.seek(SeekFrom::Current(
         (-(column_meta_size as i64) - (schema_size as i64) - 8) as i64,

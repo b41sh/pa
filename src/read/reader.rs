@@ -140,7 +140,7 @@ pub fn infer_schema<Reader: Read + Seek>(reader: &mut Reader) -> Result<Schema> 
     let column_meta_size = read_u32(reader)? as usize;
 
     reader.seek(SeekFrom::Current(
-        (-(column_meta_size as i64) - (schema_size as i64) - 8) as i64,
+        -(column_meta_size as i64) - (schema_size as i64) - 8,
     ))?;
     let mut schema_bytes = vec![0u8; schema_size];
     reader.read_exact(&mut schema_bytes)?;

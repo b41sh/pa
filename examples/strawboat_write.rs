@@ -39,7 +39,7 @@ fn main() -> Result<()> {
     use std::env;
     let args: Vec<String> = env::args().collect();
 
-    let file_path = "/tmp/input.str";
+    let file_path = &args[1];
     let (chunk, schema) = read_chunk();
     // write it
     write_batches(file_path, schema, &[chunk])?;
@@ -48,12 +48,7 @@ fn main() -> Result<()> {
 }
 
 fn read_chunk() -> (Chunk<Box<dyn Array>>, Schema) {
-    //let file_path = "/tmp/input.strquet";
-    let file_path = "/tmp/b.parquet";
-    let file_path = "/tmp/a.parquet";
-    let file_path = "/tmp/e.parquet";
-    let file_path = "/tmp/d.parquet";
-    let file_path = "/tmp/c.parquet";
+    let file_path = "/tmp/input.parquet";
     let mut reader = File::open(file_path).unwrap();
 
     // we can read its metadata:
@@ -67,7 +62,7 @@ fn read_chunk() -> (Chunk<Box<dyn Array>>, Schema) {
     for field in &schema.fields {
         let statistics =
             arrow::io::parquet::read::statistics::deserialize(field, &metadata.row_groups).unwrap();
-        println!("{:#?}", statistics);
+        println!("{statistics:#?}");
     }
 
     // say we found that we only need to read the first two row groups, "0" and "1"
@@ -80,7 +75,7 @@ fn read_chunk() -> (Chunk<Box<dyn Array>>, Schema) {
         .collect();
 
     // we can then read the row groups into chunks
-    let chunks = arrow::io::parquet::read::FileReader::new(
+    let mut chunks = arrow::io::parquet::read::FileReader::new(
         reader,
         row_groups,
         schema.clone(),
@@ -89,7 +84,7 @@ fn read_chunk() -> (Chunk<Box<dyn Array>>, Schema) {
         None,
     );
 
-    for maybe_chunk in chunks {
+    if let Some(maybe_chunk) = chunks.next() {
         let chunk = maybe_chunk.unwrap();
         println!("chunk len -> {:?}", chunk.len());
         return (chunk, schema);

@@ -51,7 +51,7 @@ impl<W: Write> NativeWriter<W> {
                 .zip(types.into_iter())
             {
                 let start = self.writer.offset;
-                let length = get_max_length(leaf_array.as_ref(), &nested);
+                let length = get_max_length(*leaf_array, &nested);
 
                 let page_metas: Vec<PageMeta> = (0..length)
                     .step_by(page_size)
@@ -63,7 +63,7 @@ impl<W: Write> NativeWriter<W> {
                         };
 
                         let (sub_array, sub_nested) =
-                            slice_parquet_array(leaf_array.as_ref(), &nested, offset, length);
+                            slice_parquet_array(*leaf_array, &nested, offset, length);
 
                         let page_start = self.writer.offset;
                         write(
@@ -79,7 +79,7 @@ impl<W: Write> NativeWriter<W> {
 
                         let page_end = self.writer.offset;
                         PageMeta {
-                            length: (page_end - page_start) as u64,
+                            length: (page_end - page_start),
                             num_values: sub_array.len() as u64,
                         }
                     })

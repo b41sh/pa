@@ -4,7 +4,7 @@ use arrow::array::{clone, Array};
 use arrow::chunk::Chunk;
 use arrow::datatypes::{Field, Schema};
 use arrow::error::Result;
-use arrow::io::parquet::write::*;
+//use arrow::io::parquet::write::*;
 use arrow::util::bench_util::{create_boolean_array, create_primitive_array, create_string_array};
 
 use strawboat::{write, Compression};
@@ -16,7 +16,6 @@ fn write(array: &dyn Array) -> Result<()> {
     let columns: ChunkBox = Chunk::new(vec![clone(array)]);
 
     let options = write::WriteOptions {
-        //compression: Compression::None,
         compression: Compression::LZ4,
         max_page_size: Some(8192),
     };
@@ -32,19 +31,16 @@ fn write(array: &dyn Array) -> Result<()> {
 }
 
 fn add_benchmark(c: &mut Criterion) {
-    /**
     (0..=10).step_by(2).for_each(|i| {
         let array = &create_boolean_array(1024 * 2usize.pow(i), 0.1, 0.5);
         let a = format!("write bool 2^{}", 10 + i);
         c.bench_function(&a, |b| b.iter(|| write(array).unwrap()));
     });
-
     (0..=10).step_by(2).for_each(|i| {
         let array = &create_string_array::<i32>(1024 * 2usize.pow(i), 4, 0.1, 42);
         let a = format!("write utf8 2^{}", 10 + i);
         c.bench_function(&a, |b| b.iter(|| write(array).unwrap()));
     });
-    */
     (0..=10).step_by(2).for_each(|i| {
         let array = &create_primitive_array::<i64>(1024 * 2usize.pow(i), 0.0);
         let a = format!("write i64 2^{}", 10 + i);

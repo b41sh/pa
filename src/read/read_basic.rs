@@ -135,7 +135,7 @@ pub fn read_bitmap<R: NativeReadBuf>(
 
     // already fit in buffer
     let mut use_inner = false;
-    let input = if reader.buffer_bytes().len() > compressed_size as usize {
+    let input = if reader.buffer_bytes().len() > compressed_size {
         use_inner = true;
         reader.buffer_bytes()
     } else {
@@ -179,13 +179,13 @@ pub fn read_validity<R: NativeReadBuf>(
     reader.read_exact(scratch.as_mut_slice())?;
 
     let mut builder = MutableBitmap::with_capacity(length);
-    let mut iter = Decoder::new(scratch.as_slice(), 1);
-    while let Some(encoded) = iter.next() {
+    let decoder = Decoder::new(scratch.as_slice(), 1);
+    for encoded in decoder {
         let encoded = encoded.unwrap();
         match encoded {
             HybridEncoded::Bitpacked(r) => {
-                let mut bitmap_iter = BitmapIter::new(r, 0, length);
-                while let Some(v) = bitmap_iter.next() {
+                let bitmap_iter = BitmapIter::new(r, 0, length);
+                for v in bitmap_iter {
                     unsafe { builder.push_unchecked(v) };
                 }
             }

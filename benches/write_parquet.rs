@@ -41,27 +41,27 @@ fn write(array: &dyn Array, encoding: Encoding) -> Result<()> {
 }
 
 fn add_benchmark(c: &mut Criterion) {
-/**
-    (0..=10).step_by(2).for_each(|i| {
-        let array = &create_boolean_array(1024 * 2usize.pow(i), 0.1, 0.5);
-        let a = format!("write bool 2^{}", 10 + i);
-        c.bench_function(&a, |b| b.iter(|| write(array, Encoding::Plain).unwrap()));
-    });
-
-    (0..=10).step_by(2).for_each(|i| {
-        let array = &create_string_array::<i32>(1024 * 2usize.pow(i), 4, 0.1, 42);
-        let a = format!("write utf8 2^{}", 10 + i);
-        c.bench_function(&a, |b| b.iter(|| write(array, Encoding::Plain).unwrap()));
-    });
-
-    (0..=10).step_by(2).for_each(|i| {
-        let array = &create_string_array::<i32>(1024 * 2usize.pow(i), 4, 0.1, 42);
-        let a = format!("write utf8 delta 2^{}", 10 + i);
-        c.bench_function(&a, |b| {
-            b.iter(|| write(array, Encoding::DeltaLengthByteArray).unwrap())
+    /**
+        (0..=10).step_by(2).for_each(|i| {
+            let array = &create_boolean_array(1024 * 2usize.pow(i), 0.1, 0.5);
+            let a = format!("write bool 2^{}", 10 + i);
+            c.bench_function(&a, |b| b.iter(|| write(array, Encoding::Plain).unwrap()));
         });
-    });
-*/
+
+        (0..=10).step_by(2).for_each(|i| {
+            let array = &create_string_array::<i32>(1024 * 2usize.pow(i), 4, 0.1, 42);
+            let a = format!("write utf8 2^{}", 10 + i);
+            c.bench_function(&a, |b| b.iter(|| write(array, Encoding::Plain).unwrap()));
+        });
+
+        (0..=10).step_by(2).for_each(|i| {
+            let array = &create_string_array::<i32>(1024 * 2usize.pow(i), 4, 0.1, 42);
+            let a = format!("write utf8 delta 2^{}", 10 + i);
+            c.bench_function(&a, |b| {
+                b.iter(|| write(array, Encoding::DeltaLengthByteArray).unwrap())
+            });
+        });
+    */
     (0..=10).step_by(2).for_each(|i| {
         let array = &create_primitive_array::<i64>(1024 * 2usize.pow(i), 0.0);
         let a = format!("write i64 2^{}", 10 + i);
@@ -71,4 +71,3 @@ fn add_benchmark(c: &mut Criterion) {
 
 criterion_group!(benches, add_benchmark);
 criterion_main!(benches);
-

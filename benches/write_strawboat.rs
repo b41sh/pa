@@ -9,7 +9,6 @@ use arrow::util::bench_util::{create_boolean_array, create_primitive_array, crea
 
 use strawboat::{write, Compression};
 
-
 type ChunkBox = Chunk<Box<dyn Array>>;
 
 fn write(array: &dyn Array) -> Result<()> {
@@ -33,7 +32,7 @@ fn write(array: &dyn Array) -> Result<()> {
 }
 
 fn add_benchmark(c: &mut Criterion) {
-/**
+    /**
     (0..=10).step_by(2).for_each(|i| {
         let array = &create_boolean_array(1024 * 2usize.pow(i), 0.1, 0.5);
         let a = format!("write bool 2^{}", 10 + i);
@@ -55,4 +54,3 @@ fn add_benchmark(c: &mut Criterion) {
 
 criterion_group!(benches, add_benchmark);
 criterion_main!(benches);
-

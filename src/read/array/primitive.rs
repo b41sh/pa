@@ -6,7 +6,6 @@ use arrow::{array::PrimitiveArray, types::NativeType};
 use parquet2::metadata::ColumnDescriptor;
 use std::convert::TryInto;
 
-#[allow(clippy::too_many_arguments)]
 pub fn read_primitive<T: NativeType, R: NativeReadBuf>(
     reader: &mut R,
     data_type: DataType,
@@ -22,7 +21,6 @@ where
     PrimitiveArray::<T>::try_new(data_type, values, validity)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn read_primitive_nested<T: NativeType, R: NativeReadBuf>(
     reader: &mut R,
     data_type: DataType,

@@ -1,18 +1,15 @@
 mod compression;
 mod endianess;
-//mod schema_descriptor;
 
 pub use compression::Compression;
-//pub use schema_descriptor::SchemaDescriptor;
 
-// pub mod read;
 pub mod read;
 pub mod write;
 
 #[macro_use]
 mod util;
 
-const ARROW_MAGIC: [u8; 6] = [b'A', b'R', b'R', b'O', b'W', b'1'];
+const ARROW_MAGIC: [u8; 6] = [b'A', b'R', b'R', b'O', b'W', b'2'];
 pub(crate) const CONTINUATION_MARKER: [u8; 4] = [0xff; 4];
 
 #[derive(

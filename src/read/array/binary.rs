@@ -10,7 +10,6 @@ use parquet2::metadata::ColumnDescriptor;
 
 use super::super::read_basic::*;
 
-#[allow(clippy::too_many_arguments)]
 pub fn read_binary<O: Offset, R: NativeReadBuf>(
     reader: &mut R,
     data_type: DataType,

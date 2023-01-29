@@ -7,7 +7,6 @@ use parquet2::metadata::ColumnDescriptor;
 
 use super::super::read_basic::*;
 
-#[allow(clippy::too_many_arguments)]
 pub fn read_boolean<R: NativeReadBuf>(
     reader: &mut R,
     data_type: DataType,
@@ -19,7 +18,6 @@ pub fn read_boolean<R: NativeReadBuf>(
     BooleanArray::try_new(data_type, values, validity)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn read_boolean_nested<R: NativeReadBuf>(
     reader: &mut R,
     data_type: DataType,

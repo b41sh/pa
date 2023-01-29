@@ -6,22 +6,13 @@ use arrow::chunk::Chunk;
 use crate::ColumnMeta;
 use crate::Compression;
 use crate::PageMeta;
-//use crate::SchemaDescriptor;
 use arrow::error::Result;
 
 use super::{write, NativeWriter};
 
-//use crate::write::pages::to_nested;
-//use crate::write::pages::to_data_type_leaves;
-//use crate::write::pages::to_leaves;
-
-use arrow::io::parquet::write::get_max_length;
-use arrow::io::parquet::write::slice_parquet_array;
-
-use arrow::io::parquet::write::to_leaves;
-use arrow::io::parquet::write::to_nested;
-use arrow::io::parquet::write::to_parquet_leaves;
-use arrow::io::parquet::write::SchemaDescriptor;
+use arrow::io::parquet::write::{
+    get_max_length, slice_parquet_array, to_leaves, to_nested, to_parquet_leaves, SchemaDescriptor,
+};
 
 /// Options declaring the behaviour of writing to IPC
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -49,14 +40,6 @@ impl<W: Write> NativeWriter<W> {
             .iter()
             .zip(schema_descriptor.fields().to_vec())
         {
-            //let array = array.as_ref();
-            //let nested = to_nested(array, &field).unwrap();
-            //let types = to_data_type_leaves(&field);
-            //let values = to_leaves(array);
-
-            println!("array={:?}", array);
-            println!("type_={:?}", type_);
-
             let array = array.as_ref();
             let nested = to_nested(array, &type_)?;
             let types = to_parquet_leaves(type_);
@@ -67,10 +50,6 @@ impl<W: Write> NativeWriter<W> {
                 .zip(nested.into_iter())
                 .zip(types.into_iter())
             {
-                println!("leaf_array={:?}", leaf_array);
-                println!("nested={:?}", nested);
-                println!("type_={:?}", type_);
-
                 let start = self.writer.offset;
                 let length = get_max_length(leaf_array.as_ref(), &nested);
 
@@ -86,9 +65,6 @@ impl<W: Write> NativeWriter<W> {
                         let (sub_array, sub_nested) =
                             slice_parquet_array(leaf_array.as_ref(), &nested, offset, length);
 
-                        println!("======sub_nested={:?}", sub_nested);
-                        println!("======sub_array={:?}", sub_array);
-
                         let page_start = self.writer.offset;
                         write(
                             &mut self.writer,
@@ -102,8 +78,6 @@ impl<W: Write> NativeWriter<W> {
                         .unwrap();
 
                         let page_end = self.writer.offset;
-                        println!("page_start={:?} page_end={:?}", page_start, page_end);
-                        println!("length={:?} sub_array.len()={:?}", length, sub_array.len());
                         PageMeta {
                             length: (page_end - page_start) as u64,
                             num_values: sub_array.len() as u64,

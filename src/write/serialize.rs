@@ -5,54 +5,29 @@ use std::io::Write;
 // false positive in clippy, see https://github.com/rust-lang/rust-clippy/issues/8463
 use arrow::error::Result;
 
+use arrow::io::parquet::read::schema::is_nullable;
+use arrow::io::parquet::write::{
+    slice_nested_leaf, write_def_levels, write_rep_and_def, Nested, Version,
+};
 use arrow::types::Offset;
 use arrow::{
     array::*, bitmap::Bitmap, datatypes::PhysicalType, trusted_len::TrustedLen, types::NativeType,
 };
-
-use arrow::io::parquet::write::slice_nested_leaf;
-use arrow::io::parquet::write::write_def_levels;
-use arrow::io::parquet::write::write_rep_and_def;
-use arrow::io::parquet::write::Nested;
-use arrow::io::parquet::write::Version;
-
-use parquet2::schema::types::PrimitiveType as ParquetPrimitiveType;
-
-use arrow::io::parquet::read::schema::is_nullable;
-
-use crate::with_match_primitive_type;
+use parquet2::schema::types::PrimitiveType;
 
 use crate::compression;
+use crate::with_match_primitive_type;
 use crate::Compression;
 
-/**
-+-------------------+
-|  rep levels len   |
-+-------------------+
-|  def levels len   |
-+-------------------+
-|  def/def values   |
-+-------------------+
-|    codec type     |
-+-------------------+
-|  compressed size  |
-+-------------------+
-| uncompressed size |
-+-------------------+
-|     values        |
-+-------------------+
-*/
 pub fn write<W: Write>(
     w: &mut W,
     array: &dyn Array,
     nested: &[Nested],
-    type_: ParquetPrimitiveType,
+    type_: PrimitiveType,
     length: usize,
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
-    //println!("\nnested.len()={:?}", nested.len());
-    println!("\nnested.len()={:?}", nested.len());
     if nested.len() == 1 {
         return write_simple(w, array, type_, compression, scratch);
     }
@@ -63,7 +38,7 @@ pub fn write<W: Write>(
 pub fn write_simple<W: Write>(
     w: &mut W,
     array: &dyn Array,
-    type_: ParquetPrimitiveType,
+    type_: PrimitiveType,
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
@@ -111,18 +86,19 @@ pub fn write_simple<W: Write>(
 
             write_utf8::<i64, W>(w, array, compression, scratch)?;
         }
-        Struct => unimplemented!(),
-        List => unimplemented!(),
-        FixedSizeList => unimplemented!(),
-        Dictionary(_key_type) => unimplemented!(),
-        Union => unimplemented!(),
-        Map => unimplemented!(),
+        Struct => unreachable!(),
+        List => unreachable!(),
+        FixedSizeList => unreachable!(),
+        Dictionary(_key_type) => unreachable!(),
+        Union => unreachable!(),
+        Map => unreachable!(),
         _ => todo!(),
     }
 
     Ok(())
 }
 
+/// Writes a nested [`Array`] to `arrow_data`
 pub fn write_nested<W: Write>(
     w: &mut W,
     array: &dyn Array,
@@ -131,20 +107,11 @@ pub fn write_nested<W: Write>(
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
-    //println!("\n-----nested={:?}", nested);
-    //println!("array.data_type()={:?}", array.data_type());
-
-    //let is_optional = is_nullable(&type_.field_info);
-
     // we slice the leaf by the offsets as dremel only computes lengths and thus
     // does NOT take the starting offset into account.
     // By slicing the leaf array we also don't write too many values.
     let (start, len) = slice_nested_leaf(nested);
-    println!("nested={:?}", nested);
-    println!("start={:?}", start);
-    println!("len={:?}", len);
-
-    // 3. 写入 rep_levels 和 def_levels
+    // write rep_levels and def_levels
     write_nested_validity::<W>(w, nested, length, start, scratch)?;
 
     let array = array.slice(start, len);
@@ -186,12 +153,12 @@ pub fn write_nested<W: Write>(
             compression,
             scratch,
         )?,
-        Struct => unimplemented!(),
-        List => unimplemented!(),
-        FixedSizeList => unimplemented!(),
-        Dictionary(_key_type) => unimplemented!(),
-        Union => unimplemented!(),
-        Map => unimplemented!(),
+        Struct => unreachable!(),
+        List => unreachable!(),
+        FixedSizeList => unreachable!(),
+        Dictionary(_key_type) => unreachable!(),
+        Union => unreachable!(),
+        Map => unreachable!(),
         _ => todo!(),
     }
 
@@ -207,16 +174,9 @@ fn write_validity<W: Write>(
 ) -> Result<()> {
     scratch.clear();
 
-    println!("\n\n ---------before scratch.len()={:?}", scratch.len());
-    println!("---------before len={:?}", len);
-
     write_def_levels(scratch, is_optional, validity, len, Version::V2)?;
     let rep_levels_len = 0;
     let def_levels_len = scratch.len();
-
-    println!("----------scratch={:?}", scratch);
-    println!("rep_levels_len={:?}", rep_levels_len);
-    println!("def_levels_len={:?}", def_levels_len);
 
     w.write_all(&(rep_levels_len as u32).to_le_bytes())?;
     w.write_all(&(def_levels_len as u32).to_le_bytes())?;
@@ -235,11 +195,6 @@ fn write_nested_validity<W: Write>(
     scratch.clear();
 
     let (rep_levels_len, def_levels_len) = write_rep_and_def(Version::V2, nested, scratch, start)?;
-
-    println!("\n\n----------scratch={:?}", scratch);
-    println!("----------nested={:?}", nested);
-    println!("rep_levels_len={:?}", rep_levels_len);
-    println!("def_levels_len={:?}", def_levels_len);
 
     w.write_all(&(length as u32).to_le_bytes())?;
     w.write_all(&(rep_levels_len as u32).to_le_bytes())?;
@@ -267,7 +222,6 @@ fn write_boolean<W: Write>(
     write_bitmap(w, array.values(), compression, scratch)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn write_generic_binary<O: Offset, W: Write>(
     w: &mut W,
     offsets: &[O],

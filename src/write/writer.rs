@@ -101,9 +101,6 @@ impl<W: Write> NativeWriter<W> {
         }
         assert_eq!(chunk.arrays().len(), self.schema.fields.len());
 
-        //let schema_descriptor = SchemaDescriptor::new(self.schema.fields());
-        //self.encode_chunk(schema_descriptor, chunk)?;
-
         let schema_descriptor = to_parquet_schema(&self.schema)?;
         self.encode_chunk(schema_descriptor, chunk)?;
 
@@ -120,7 +117,7 @@ impl<W: Write> NativeWriter<W> {
         }
         // write footer
         // footer = schema(variable bytes) + column_meta(variable bytes)
-        // + schema size(4 bytes) + column_meta size(4bytes) + EOS(8 bytes) + MAGIC(6 bytes)
+        // + schema size(4 bytes) + column_meta size(4bytes) + EOS(8 bytes)
         let schema_bytes = schema_to_bytes(&self.schema, &default_ipc_fields(&self.schema.fields));
         // write the schema, set the written bytes to the schema
         self.writer.write_all(&schema_bytes)?;

@@ -54,12 +54,10 @@ impl<R: NativeReadBuf> NativeReader<R> {
     }
 
     /// must call after has_next
-    //pub fn next_array(&mut self) -> Result<()> {
     pub fn next_array(&mut self) -> Result<Box<dyn Array>> {
         let result = if is_primitive(self.field.data_type()) {
             let page_meta = &self.column_metas[0].pages[self.current_page].clone();
 
-            //let page = &self.page_metas[self.current_page];
             deserialize::read_simple(
                 &mut self.page_readers[0],
                 self.field.data_type().clone(),
@@ -72,7 +70,6 @@ impl<R: NativeReadBuf> NativeReader<R> {
                 .iter()
                 .map(|meta| meta.pages[self.current_page].clone())
                 .collect::<Vec<_>>();
-            println!("page_metas={:?}", page_metas);
 
             let (_, array) = deserialize::read_nested(
                 &mut self.page_readers,
@@ -110,11 +107,9 @@ impl<R: NativeReadBuf + std::io::Seek> NativeReader<R> {
 }
 
 pub fn read_meta<Reader: Read + Seek>(reader: &mut Reader) -> Result<Vec<ColumnMeta>> {
-    // ARROW_MAGIC(6 bytes) + EOS(8 bytes) + meta_size(4 bytes) = 18 bytes
-    //reader.seek(SeekFrom::End(-18))?;
+    // EOS(8 bytes) + meta_size(4 bytes) = 12 bytes
     reader.seek(SeekFrom::End(-12))?;
     let meta_size = read_u32(reader)? as usize;
-    //reader.seek(SeekFrom::End(-22 - meta_size as i64))?;
     reader.seek(SeekFrom::End(-16 - meta_size as i64))?;
 
     let mut buf = vec![0u8; meta_size];
@@ -139,13 +134,10 @@ pub fn read_meta<Reader: Read + Seek>(reader: &mut Reader) -> Result<Vec<ColumnM
 }
 
 pub fn infer_schema<Reader: Read + Seek>(reader: &mut Reader) -> Result<Schema> {
-    // ARROW_MAGIC(6 bytes) + EOS(8 bytes) + meta_size(4 bytes) + schema_size(4bytes) = 22 bytes
-    //reader.seek(SeekFrom::End(-22))?;
+    // EOS(8 bytes) + meta_size(4 bytes) + schema_size(4bytes) = 16 bytes
     reader.seek(SeekFrom::End(-16))?;
     let schema_size = read_u32(reader)? as usize;
     let column_meta_size = read_u32(reader)? as usize;
-    println!("schema_size={:?}", schema_size);
-    println!("column_meta_size={:?}", column_meta_size);
 
     reader.seek(SeekFrom::Current(
         (-(column_meta_size as i64) - (schema_size as i64) - 8) as i64,

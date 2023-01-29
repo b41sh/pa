@@ -1,17 +1,17 @@
 use std::convert::TryInto;
 use std::io::Read;
 
-use arrow::buffer::Buffer;
-use arrow::error::Result;
-
-use arrow::{bitmap::Bitmap, types::NativeType};
-
 use super::super::endianess::is_native_little_endian;
 use super::NativeReadBuf;
 use crate::{compression, Compression};
 
-use arrow::bitmap::MutableBitmap;
-use arrow::io::parquet::read::{init_nested, InitNested, NestedState};
+use arrow::{
+    bitmap::{Bitmap, MutableBitmap},
+    buffer::Buffer,
+    error::Result,
+    io::parquet::read::{init_nested, InitNested, NestedState},
+    types::NativeType,
+};
 
 use parquet2::{
     encoding::hybrid_rle::{BitmapIter, Decoder, HybridEncoded, HybridRleDecoder},
@@ -164,25 +164,6 @@ pub fn read_bitmap<R: NativeReadBuf>(
     Bitmap::try_new(buffer, length)
 }
 
-/**
-+-------------------+
-|  rep levels len   |
-+-------------------+
-|  def levels len   |
-+-------------------+
-|  def/def values   |
-+-------------------+
-|    codec type     |
-+-------------------+
-|  compressed size  |
-+-------------------+
-| uncompressed size |
-+-------------------+
-|     values        |
-+-------------------+
-*/
-
-#[allow(clippy::too_many_arguments)]
 pub fn read_validity<R: NativeReadBuf>(
     reader: &mut R,
     length: usize,
@@ -190,15 +171,12 @@ pub fn read_validity<R: NativeReadBuf>(
 ) -> Result<Option<Bitmap>> {
     let _rep_levels_len = read_u32(reader)?;
     let def_levels_len = read_u32(reader)?;
-    println!("def_levels_len={:?}", def_levels_len);
 
     if def_levels_len == 0 {
         return Ok(None);
     }
     scratch.resize(def_levels_len as usize, 0);
     reader.read_exact(scratch.as_mut_slice())?;
-    let buf = scratch.as_slice();
-    println!("buf={:?}", buf);
 
     let mut builder = MutableBitmap::with_capacity(length);
     let mut iter = Decoder::new(scratch.as_slice(), 1);
@@ -224,11 +202,11 @@ pub fn read_validity_nested<R: NativeReadBuf>(
     init: Vec<InitNested>,
     scratch: &mut Vec<u8>,
 ) -> Result<(NestedState, Option<Bitmap>)> {
-    let offset_length = read_u32(reader)?;
+    // If the Array is a List, additional is the length of offsets,
+    // otherwise additional is equal to length.
+    let additional = read_u32(reader)?;
     let rep_levels_len = read_u32(reader)?;
     let def_levels_len = read_u32(reader)?;
-    println!("\n\nrep_levels_len={:?}", rep_levels_len);
-    println!("def_levels_len={:?}", def_levels_len);
 
     let max_rep_level = leaf.descriptor.max_rep_level;
     let max_def_level = leaf.descriptor.max_def_level;
@@ -241,33 +219,16 @@ pub fn read_validity_nested<R: NativeReadBuf>(
     reader.read_exact(scratch.as_mut_slice())?;
     let def_levels = scratch.clone();
 
-    // 05d6 0105 ff03
-    //scratch=[5, 214, 1, 5, 255, 3]
-    //nested=[List(ListNested { is_optional: false, offsets: [0, 3, 5, 9, 10], validity: None }), Primitive(None, false, 10)]
-
-    //nested=NestedState { nested: [NestedValid { offsets: [] }] }
-    //nested=NestedState { nested: [NestedValid { offsets: [1, 1] }] }
-    println!("max_rep_level={:?}", max_rep_level);
-    println!("max_def_level={:?}", max_def_level);
-
-    println!("rep_levels={:?}", rep_levels);
-    println!("def_levels={:?}", def_levels);
-
-    //let length = 10;
-    println!("length={:?}", length);
-
     let reps = HybridRleDecoder::try_new(&rep_levels, get_bit_width(max_rep_level), length)?;
     let defs = HybridRleDecoder::try_new(&def_levels, get_bit_width(max_def_level), length)?;
-
     let mut page_iter = reps.zip(defs).peekable();
 
     let mut nested = init_nested(&init, length);
 
-    println!("nested={:?}", nested);
-
-    let additional = offset_length;
-    println!("additional={:?}", additional);
-
+    // The following code is copied from arrow2 `extend_offsets2` function.
+    // https://github.com/jorgecarleitao/arrow2/blob/main/src/io/parquet/read/deserialize/nested_utils.rs#L403
+    // The main purpose of this code is to caculate the `NestedState` and `Bitmap`
+    // of the nested information by decode `rep_levels` and `def_levels`.
     let max_depth = nested.nested.len();
 
     let mut cum_sum = vec![0u32; max_depth + 1];
@@ -281,9 +242,6 @@ pub fn read_validity_nested<R: NativeReadBuf>(
         let delta = nest.is_repeated() as u32;
         cum_rep[i + 1] = cum_rep[i] + delta;
     }
-    println!("max_depth={:?}", max_depth);
-    println!("cum_sum={:?}", cum_sum);
-    println!("cum_rep={:?}", cum_rep);
 
     let mut is_nullable = false;
     let mut builder = MutableBitmap::with_capacity(length);
@@ -292,11 +250,6 @@ pub fn read_validity_nested<R: NativeReadBuf>(
     while let Some((rep, def)) = page_iter.next() {
         let rep = rep?;
         let def = def?;
-        // rep=0, def=1
-        // rep=1, def=1
-        // rep=1, def=1
-        // rep=0, def=1
-        println!("rep={:?}, def={:?}", rep, def);
         if rep == 0 {
             rows += 1;
         }
@@ -311,7 +264,6 @@ pub fn read_validity_nested<R: NativeReadBuf>(
                     .map(|x| x.len() as i64)
                     // the last depth is the leaf, which is always increased by 1
                     .unwrap_or(1);
-                println!("-----11112222nested.nested={:?}", nested.nested);
 
                 let nest = &mut nested.nested[depth];
 
@@ -325,15 +277,9 @@ pub fn read_validity_nested<R: NativeReadBuf>(
 
                 if depth == max_depth - 1 {
                     // the leaf / primitive
-                    println!(
-                        "------------1111nest.is_nullable()={:?}",
-                        nest.is_nullable()
-                    );
                     is_nullable = nest.is_nullable();
                     if is_nullable {
                         let is_valid = (def != cum_sum[depth]) || !nest.is_nullable();
-                        println!("right_level={:?}", right_level);
-                        println!("is_valid={:?}", is_valid);
                         if right_level && is_valid {
                             unsafe { builder.push_unchecked(true) };
                         } else {

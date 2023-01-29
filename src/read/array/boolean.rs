@@ -2,6 +2,8 @@ use crate::read::NativeReadBuf;
 use arrow::array::BooleanArray;
 use arrow::datatypes::DataType;
 use arrow::error::Result;
+use parquet2::metadata::ColumnDescriptor;
+use arrow::io::parquet::read::{InitNested, NestedState};
 
 use super::super::read_basic::*;
 
@@ -15,4 +17,22 @@ pub fn read_boolean<R: NativeReadBuf>(
     let validity = read_validity(reader, length, scratch)?;
     let values = read_bitmap(reader, length, scratch)?;
     BooleanArray::try_new(data_type, values, validity)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn read_boolean_nested<R: NativeReadBuf>(
+    reader: &mut R,
+    data_type: DataType,
+    leaf: &ColumnDescriptor,
+    mut init: Vec<InitNested>,
+    length: usize,
+    scratch: &mut Vec<u8>,
+) -> Result<(NestedState, BooleanArray)> {
+    let (mut nested, validity) = read_validity_nested(reader, length, leaf, init, scratch)?;
+    nested.nested.pop();
+
+    let values = read_bitmap(reader, length, scratch)?;
+    let array = BooleanArray::try_new(data_type, values, validity)?;
+
+    Ok((nested, array))
 }

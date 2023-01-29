@@ -104,7 +104,18 @@ pub fn read_nested<R: NativeReadBuf>(
 
     match field.data_type().to_physical_type() {
         //Null => read_null(field.data_type().clone(), page_metas[0].num_values as usize).map(|x| x.boxed()),
-        // Boolean => read_boolean(reader, data_type, length, scratch).map(|x| x.boxed()),
+        Boolean => {
+            init.push(InitNested::Primitive(field.is_nullable));
+            let (nested, array) = read_boolean_nested(
+                &mut readers[0],
+                field.data_type().clone(),
+                &leaves[0],
+                init,
+                page_metas[0].num_values as usize,
+                &mut scratchs[0]
+            )?;
+            Ok((nested, array.boxed()))
+        }
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             init.push(InitNested::Primitive(field.is_nullable));
             let (nested, array) = read_primitive_nested::<$T, _>(
@@ -117,23 +128,54 @@ pub fn read_nested<R: NativeReadBuf>(
             )?;
             Ok((nested, array.boxed()))
         }),
-        /**
         Binary => {
-            read_binary_nested::<i32, _>(
+            init.push(InitNested::Primitive(field.is_nullable));
+            let (nested, array) = read_binary_nested::<i32, _>(
                 &mut readers[0],
                 field.data_type().clone(),
                 &leaves[0],
+                init,
                 page_metas[0].num_values as usize,
                 &mut scratchs[0]
-            )
-            .map(|x| x.boxed())
+            )?;
+            Ok((nested, array.boxed()))
         }
-        */
-        // Binary => read_binary::<i32, _>(reader, data_type, length, scratch).map(|x| x.boxed()),
-        // LargeBinary => read_binary::<i64, _>(reader, data_type, length, scratch).map(|x| x.boxed()),
-        // FixedSizeBinary => unimplemented!(),
-        // Utf8 => read_utf8::<i32, _>(reader, data_type, length, scratch).map(|x| x.boxed()),
-        // LargeUtf8 => read_utf8::<i64, _>(reader, data_type, length, scratch).map(|x| x.boxed()),
+        LargeBinary => {
+            init.push(InitNested::Primitive(field.is_nullable));
+            let (nested, array) = read_binary_nested::<i64, _>(
+                &mut readers[0],
+                field.data_type().clone(),
+                &leaves[0],
+                init,
+                page_metas[0].num_values as usize,
+                &mut scratchs[0]
+            )?;
+            Ok((nested, array.boxed()))
+        }
+        Utf8 => {
+            init.push(InitNested::Primitive(field.is_nullable));
+            let (nested, array) = read_utf8_nested::<i32, _>(
+                &mut readers[0],
+                field.data_type().clone(),
+                &leaves[0],
+                init,
+                page_metas[0].num_values as usize,
+                &mut scratchs[0]
+            )?;
+            Ok((nested, array.boxed()))
+        }
+        LargeUtf8 => {
+            init.push(InitNested::Primitive(field.is_nullable));
+            let (nested, array) = read_utf8_nested::<i64, _>(
+                &mut readers[0],
+                field.data_type().clone(),
+                &leaves[0],
+                init,
+                page_metas[0].num_values as usize,
+                &mut scratchs[0]
+            )?;
+            Ok((nested, array.boxed()))
+        }
         _ => match field.data_type().to_logical_type() {
             DataType::List(inner)
             | DataType::LargeList(inner)
@@ -148,33 +190,8 @@ pub fn read_nested<R: NativeReadBuf>(
                     scratchs,
                 )?;
 
-                println!("nested={:?}", nested);
-
-    //let (mut offsets, validity) = nested.nested.pop().unwrap().inner();
-    //println!("offsets={:?}", offsets);
-                //println!("nested={:?}", nested);
-
-
-/**
-
-                let iter = columns_to_iter_recursive(
-                    columns,
-                    types,
-                    inner.as_ref().clone(),
-                    init,
-                    num_rows,
-                    chunk_size,
-                )?;
-                let iter = iter.map(move |x| {
-                    let (mut nested, array) = x?;
-                    let array = create_list(field.data_type().clone(), &mut nested, array);
-                    Ok((nested, array))
-                });
-                Box::new(iter) as _
-                */
                 let array = create_list(field.data_type().clone(), &mut nested, values);
                 println!("array={:?}", array);
-
 
                 Ok((nested, array))
             }
@@ -207,6 +224,8 @@ pub fn read_nested<R: NativeReadBuf>(
                     values,
                     None,
                 );
+                println!("array={:?}", array);
+
                 Ok((NestedState::new(vec![]), array.boxed()))
             }
             _ => unimplemented!(),
@@ -214,11 +233,3 @@ pub fn read_nested<R: NativeReadBuf>(
         _ => unimplemented!(),
     }
 }
-
-
-
-
-
-
-
-

@@ -39,7 +39,7 @@ fn main() -> Result<()> {
     use std::env;
     let args: Vec<String> = env::args().collect();
 
-    let file_path = &args[1];
+    let file_path = "/tmp/input.str";
     let (chunk, schema) = read_chunk();
     // write it
     write_batches(file_path, schema, &[chunk])?;
@@ -48,7 +48,12 @@ fn main() -> Result<()> {
 }
 
 fn read_chunk() -> (Chunk<Box<dyn Array>>, Schema) {
-    let file_path = "/tmp/input.strquet";
+    //let file_path = "/tmp/input.strquet";
+    let file_path = "/tmp/b.parquet";
+    let file_path = "/tmp/a.parquet";
+    let file_path = "/tmp/e.parquet";
+    let file_path = "/tmp/c.parquet";
+    let file_path = "/tmp/d.parquet";
     let mut reader = File::open(file_path).unwrap();
 
     // we can read its metadata:

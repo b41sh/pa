@@ -3,6 +3,10 @@ use arrow::datatypes::DataType;
 use arrow::error::Result;
 use arrow::{array::PrimitiveArray, types::NativeType};
 use std::convert::TryInto;
+use parquet2::metadata::ColumnDescriptor;
+use arrow::io::parquet::read::{InitNested, NestedState};
+
+
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_primitive<T: NativeType, R: NativeReadBuf>(
@@ -18,4 +22,26 @@ where
 
     let values = read_buffer(reader, length, scratch)?;
     PrimitiveArray::<T>::try_new(data_type, values, validity)
+}
+
+
+#[allow(clippy::too_many_arguments)]
+pub fn read_primitive_nested<T: NativeType, R: NativeReadBuf>(
+    reader: &mut R,
+    data_type: DataType,
+    leaf: &ColumnDescriptor,
+    mut init: Vec<InitNested>,
+    length: usize,
+    scratch: &mut Vec<u8>,
+) -> Result<(NestedState, PrimitiveArray<T>)>
+where
+    Vec<u8>: TryInto<T::Bytes>,
+{
+    let (mut nested, validity) = read_validity_nested(reader, length, leaf, init, scratch)?;
+    nested.nested.pop();
+
+    let values = read_buffer(reader, length, scratch)?;
+    let array = PrimitiveArray::<T>::try_new(data_type, values, validity)?;
+
+    Ok((nested, array))
 }

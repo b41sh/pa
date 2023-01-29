@@ -56,10 +56,12 @@ pub fn write<W: Write>(
     array: &dyn Array,
     nested: &[Nested],
     type_: ParquetPrimitiveType,
+    length: usize,
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
     //println!("\nnested.len()={:?}", nested.len());
+    println!("\nnested.len()={:?}", nested.len());
     if nested.len() == 1 {
         return write_simple(
             w,
@@ -74,6 +76,7 @@ pub fn write<W: Write>(
         array,
         nested,
         type_,
+        length,
         compression,
         scratch,
     )
@@ -204,6 +207,7 @@ pub fn write_nested<W: Write>(
     array: &dyn Array,
     nested: &[Nested],
     type_: ParquetPrimitiveType,
+    length: usize,
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
@@ -216,13 +220,15 @@ pub fn write_nested<W: Write>(
     // does NOT take the starting offset into account.
     // By slicing the leaf array we also don't write too many values.
     let (start, len) = slice_nested_leaf(nested);
-    //println!("start={:?}", start);
-    //println!("len={:?}", len);
+    println!("nested={:?}", nested);
+    println!("start={:?}", start);
+    println!("len={:?}", len);
 
     // 3. 写入 rep_levels 和 def_levels
     write_nested_validity::<W>(
         w,
         nested,
+        length,
         start,
         scratch,
     )?;
@@ -287,13 +293,18 @@ fn write_validity<W: Write>(
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
     scratch.clear();
+
+    println!("\n\n ---------before scratch.len()={:?}", scratch.len());
+    println!("---------before len={:?}", len);
+
+
     write_def_levels(scratch, is_optional, validity, len, Version::V2)?;
     let rep_levels_len = 0;
     let def_levels_len = scratch.len();
 
-    //println!("\n\n----------scratch={:?}", scratch);
-    //println!("rep_levels_len={:?}", rep_levels_len);
-    //println!("def_levels_len={:?}", def_levels_len);
+    println!("----------scratch={:?}", scratch);
+    println!("rep_levels_len={:?}", rep_levels_len);
+    println!("def_levels_len={:?}", def_levels_len);
 
     w.write_all(&(rep_levels_len as u32).to_le_bytes())?;
     w.write_all(&(def_levels_len as u32).to_le_bytes())?;
@@ -305,6 +316,7 @@ fn write_validity<W: Write>(
 fn write_nested_validity<W: Write>(
     w: &mut W,
     nested: &[Nested],
+    length: usize,
     start: usize,
     scratch: &mut Vec<u8>,
 ) -> Result<()> {
@@ -314,10 +326,12 @@ fn write_nested_validity<W: Write>(
         write_rep_and_def(Version::V2, nested, scratch, start)?;
 
 
-    //println!("\n\n----------scratch={:?}", scratch);
-    //println!("rep_levels_len={:?}", rep_levels_len);
-    //println!("def_levels_len={:?}", def_levels_len);
+    println!("\n\n----------scratch={:?}", scratch);
+    println!("----------nested={:?}", nested);
+    println!("rep_levels_len={:?}", rep_levels_len);
+    println!("def_levels_len={:?}", def_levels_len);
 
+    w.write_all(&(length as u32).to_le_bytes())?;
     w.write_all(&(rep_levels_len as u32).to_le_bytes())?;
     w.write_all(&(def_levels_len as u32).to_le_bytes())?;
     w.write_all(&scratch[..scratch.len()])?;

@@ -46,6 +46,9 @@ impl<W: Write> NativeWriter<W> {
             //let types = to_data_type_leaves(&field);
             //let values = to_leaves(array);
 
+            println!("array={:?}", array);
+            println!("type_={:?}", type_);
+
 
             let array = array.as_ref();
             let nested = to_nested(array, &type_)?;
@@ -53,9 +56,9 @@ impl<W: Write> NativeWriter<W> {
             let leaf_arrays = to_leaves(array);
 
             for ((leaf_array, nested), type_) in leaf_arrays.iter().zip(nested.into_iter()).zip(types.into_iter()) {
-                //println!("leaf_array={:?}", leaf_array);
-                //println!("nested={:?}", nested);
-                //println!("type_={:?}", type_);
+                println!("leaf_array={:?}", leaf_array);
+                println!("nested={:?}", nested);
+                println!("type_={:?}", type_);
 
                 let start = self.writer.offset;
                 let length = get_max_length(leaf_array.as_ref(), &nested);
@@ -72,20 +75,26 @@ impl<W: Write> NativeWriter<W> {
                         let (sub_array, sub_nested) =
                             slice_parquet_array(leaf_array.as_ref(), &nested, offset, length);
 
+                println!("======sub_nested={:?}", sub_nested);
+                println!("======sub_array={:?}", sub_array);
+
                         let page_start = self.writer.offset;
                         write(
                             &mut self.writer,
                             sub_array.as_ref(),
                             &sub_nested,
                             type_.clone(),
+                            length,
                             self.options.compression,
                             &mut self.scratch,
                         ).unwrap();
 
                         let page_end = self.writer.offset;
+                        println!("page_start={:?} page_end={:?}", page_start, page_end);
+                        println!("length={:?} sub_array.len()={:?}", length, sub_array.len());
                         PageMeta {
                             length: (page_end - page_start) as u64,
-                            num_values: length as u64,
+                            num_values: sub_array.len() as u64,
                         }
                     })
                     .collect();

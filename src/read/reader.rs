@@ -3,48 +3,173 @@ use crate::{ColumnMeta, PageMeta};
 use super::read_basic::read_u64;
 use super::NativeReadBuf;
 use super::{deserialize, read_basic::read_u32};
-use arrow::datatypes::Schema;
+use arrow::datatypes::{Schema, DataType, Field, PhysicalType};
 use arrow::error::Result;
 use arrow::io::ipc::read::deserialize_schema;
-use arrow::{array::Array, datatypes::DataType};
+use arrow::array::Array;
 use std::io::{Read, Seek, SeekFrom};
 
 use arrow::io::parquet::read::ColumnDescriptor;
 use arrow::io::parquet::write::ParquetType;
-use arrow::datatypes::Field;
 
-pub struct NnativeReader<R: NativeReadBuf> {
-    reader: R,
-    fields: Vec<Field>,
-    parquet_types: Vec<ParquetType>,
-    leaves: Vec<ColumnDescriptor>,
-    column_metas: Vec<ColumnMeta>,
-    current_column: usize,
-    scratch: Vec<u8>,
+
+fn is_primitive(data_type: &DataType) -> bool {
+    matches!(
+        data_type.to_physical_type(),
+            PhysicalType::Primitive(_)
+            | PhysicalType::Null
+            | PhysicalType::Boolean
+            | PhysicalType::Utf8
+            | PhysicalType::LargeUtf8
+            | PhysicalType::Binary
+            | PhysicalType::LargeBinary
+            | PhysicalType::FixedSizeBinary
+            | PhysicalType::Dictionary(_)
+    )
 }
 
-/**
+pub struct NnativeReader<R: NativeReadBuf> {
+    page_readers: Vec<R>,
+    field: Field,
+    parquet_type: ParquetType,
+    leaves: Vec<ColumnDescriptor>,
+    column_metas: Vec<ColumnMeta>,
+    current_page: usize,
+    scratchs: Vec<Vec<u8>>,
+}
+
 impl<R: NativeReadBuf> NnativeReader<R> {
     pub fn new(
-        reader: R,
-        fields: Vec<Field>,
-        parquet_types: Vec<ParquetType>,
+        page_readers: Vec<R>,
+        field: Field,
+        parquet_type: ParquetType,
         leaves: Vec<ColumnDescriptor>,
         column_metas: Vec<ColumnMeta>,
-        scratch: Vec<u8>,
+        scratchs: Vec<Vec<u8>>,
     ) -> Self {
         Self {
-            reader,
-            fields,
-            parquet_types,
+            page_readers,
+            field,
+            parquet_type,
             leaves,
             column_metas,
-            current_column: 0,
-            scratch,
+            current_page: 0,
+            scratchs,
         }
     }
 
 
+    /// must call after has_next
+    //pub fn next_array(&mut self) -> Result<()> {
+    pub fn next_array(&mut self) -> Result<Box<dyn Array>> {
+        let result = if is_primitive(self.field.data_type()) {
+            let page_meta = &self.column_metas[0].pages[self.current_page].clone();
+
+            //let page = &self.page_metas[self.current_page];
+            deserialize::read_simple(
+                &mut self.page_readers[0],
+                self.field.data_type().clone(),
+                page_meta.num_values as usize,
+                &mut self.scratchs[0],
+            )?
+        } else {
+            let page_metas = &self.column_metas.iter()
+                    .map(|meta| meta.pages[self.current_page].clone())
+                    .collect::<Vec<_>>();
+            println!("page_metas={:?}", page_metas);
+
+            let (_, array) = deserialize::read_nested(
+                &mut self.page_readers,
+                self.field.clone(),
+                &mut self.leaves,
+                page_metas.clone(),
+                vec![],
+                &mut self.scratchs,
+            )?;
+            array
+        };
+
+
+        //let page_metas = &self.column_metas.iter()
+        //            .map(|meta| meta.pages[self.current_page].clone())
+        //            .collect::<Vec<_>>();
+        //println!("page_metas={:?}", page_metas);
+
+
+        self.current_page += 1;
+
+/**
+        let page = &self.page_metas[self.current_page];
+        let result = deserialize::read(
+            &mut self.reader,
+            self.data_type.clone(),
+            page.num_values as usize,
+            &mut self.scratch,
+        )?;
+*/
+        Ok(result)
+    }
+
+/**
+    fn read_columns(
+        reader: &mut R,
+        page_metas: Vec<PageMeta>,
+    ) -> Result<Vec<Vec<u8>>> {
+
+    }
+
+pub struct ColumnMeta {
+    pub offset: u64,
+    pub pages: Vec<PageMeta>,
+}
+
+pub struct PageMeta {
+    // compressed size of this page
+    pub length: u64,
+    // num values(rows) of this page
+    pub num_values: u64,
+}
+
+
+
+pub fn read<R: NativeReadBuf>(
+    reader: &mut R,
+    data_type: DataType,
+    length: usize,
+    scratch: &mut Vec<u8>,
+) -> Result<Box<dyn Array>> {
+    use PhysicalType::*;
+
+
+
+/// Reads all columns that are part of the parquet field `field_name`
+/// # Implementation
+/// This operation is IO-bounded `O(C)` where C is the number of columns associated to
+/// the field (one for non-nested types)
+pub fn read_columns<'a, R: Read + Seek>(
+    reader: &mut R,
+    columns: &'a [ColumnChunkMetaData],
+    field_name: &str,
+) -> Result<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>> {
+    get_field_columns(columns, field_name)
+        .into_iter()
+        .map(|meta| _read_single_column(reader, meta))
+        .collect()
+}
+*/
+
+
+
+    pub fn has_next(&self) -> bool {
+        self.current_page < self.column_metas[0].pages.len()
+    }
+
+    pub fn current_page(&self) -> usize {
+        self.current_page
+    }
+}
+
+/**
     pub fn has_next(&self) -> bool {
         self.current_column < self.fields.len()
     }
@@ -67,9 +192,7 @@ impl<R: NativeReadBuf> NnativeReader<R> {
         self.current_page += 1;
         Ok(result)
     }
-}
 */
-
 
 pub struct NativeReader<R: NativeReadBuf> {
     reader: R,
@@ -98,7 +221,7 @@ impl<R: NativeReadBuf> NativeReader<R> {
     /// must call after has_next
     pub fn next_array(&mut self) -> Result<Box<dyn Array>> {
         let page = &self.page_metas[self.current_page];
-        let result = deserialize::read(
+        let result = deserialize::read_simple(
             &mut self.reader,
             self.data_type.clone(),
             page.num_values as usize,

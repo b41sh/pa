@@ -9,7 +9,6 @@ use super::super::read_basic::*;
 pub fn read_boolean<R: NativeReadBuf>(
     reader: &mut R,
     data_type: DataType,
-
     length: usize,
     scratch: &mut Vec<u8>,
 ) -> Result<BooleanArray> {

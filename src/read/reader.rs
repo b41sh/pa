@@ -3,19 +3,18 @@ use crate::{ColumnMeta, PageMeta};
 use super::read_basic::read_u64;
 use super::NativeReadBuf;
 use super::{deserialize, read_basic::read_u32};
-use arrow::datatypes::{Schema, DataType, Field, PhysicalType};
+use arrow::array::Array;
+use arrow::datatypes::{DataType, Field, PhysicalType, Schema};
 use arrow::error::Result;
 use arrow::io::ipc::read::deserialize_schema;
-use arrow::array::Array;
 use std::io::{Read, Seek, SeekFrom};
 
 use arrow::io::parquet::read::ColumnDescriptor;
 
-
 fn is_primitive(data_type: &DataType) -> bool {
     matches!(
         data_type.to_physical_type(),
-            PhysicalType::Primitive(_)
+        PhysicalType::Primitive(_)
             | PhysicalType::Null
             | PhysicalType::Boolean
             | PhysicalType::Utf8
@@ -54,7 +53,6 @@ impl<R: NativeReadBuf> NativeReader<R> {
         }
     }
 
-
     /// must call after has_next
     //pub fn next_array(&mut self) -> Result<()> {
     pub fn next_array(&mut self) -> Result<Box<dyn Array>> {
@@ -69,9 +67,11 @@ impl<R: NativeReadBuf> NativeReader<R> {
                 &mut self.scratchs[0],
             )?
         } else {
-            let page_metas = &self.column_metas.iter()
-                    .map(|meta| meta.pages[self.current_page].clone())
-                    .collect::<Vec<_>>();
+            let page_metas = &self
+                .column_metas
+                .iter()
+                .map(|meta| meta.pages[self.current_page].clone())
+                .collect::<Vec<_>>();
             println!("page_metas={:?}", page_metas);
 
             let (_, array) = deserialize::read_nested(
@@ -102,9 +102,7 @@ impl<R: NativeReadBuf + std::io::Seek> NativeReader<R> {
     pub fn skip_page(&mut self) -> Result<()> {
         for (i, column_meta) in self.column_metas.iter().enumerate() {
             let page_meta = &column_meta.pages[self.current_page];
-            self.page_readers[i].seek(SeekFrom::Current(
-                page_meta.length as i64,
-            ))?;
+            self.page_readers[i].seek(SeekFrom::Current(page_meta.length as i64))?;
         }
         self.current_page += 1;
         Ok(())
@@ -133,10 +131,7 @@ pub fn read_meta<Reader: Read + Seek>(reader: &mut Reader) -> Result<Vec<ColumnM
             let length = read_u64(&mut buf_reader)?;
             let num_values = read_u64(&mut buf_reader)?;
 
-            pages.push(PageMeta {
-                length,
-                num_values,
-            });
+            pages.push(PageMeta { length, num_values });
         }
         metas.push(ColumnMeta { offset, pages })
     }
@@ -151,7 +146,6 @@ pub fn infer_schema<Reader: Read + Seek>(reader: &mut Reader) -> Result<Schema> 
     let column_meta_size = read_u32(reader)? as usize;
     println!("schema_size={:?}", schema_size);
     println!("column_meta_size={:?}", column_meta_size);
-
 
     reader.seek(SeekFrom::Current(
         (-(column_meta_size as i64) - (schema_size as i64) - 8) as i64,

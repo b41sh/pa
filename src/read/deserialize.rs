@@ -3,7 +3,7 @@ use crate::PageMeta;
 use arrow::array::*;
 use arrow::datatypes::{DataType, Field, PhysicalType};
 use arrow::error::Result;
-use arrow::io::parquet::read::{InitNested, NestedState, n_columns, create_list};
+use arrow::io::parquet::read::{create_list, n_columns, InitNested, NestedState};
 use parquet2::metadata::ColumnDescriptor;
 
 use super::{array::*, NativeReadBuf};
@@ -37,7 +37,6 @@ pub fn read_simple<R: NativeReadBuf>(
     }
 }
 
-
 pub fn read_nested<R: NativeReadBuf>(
     readers: &mut Vec<R>,
     field: Field,
@@ -58,7 +57,7 @@ pub fn read_nested<R: NativeReadBuf>(
                 &leaves[0],
                 init,
                 page_metas[0].num_values as usize,
-                &mut scratchs[0]
+                &mut scratchs[0],
             )?;
             Ok((nested, array.boxed()))
         }
@@ -82,7 +81,7 @@ pub fn read_nested<R: NativeReadBuf>(
                 &leaves[0],
                 init,
                 page_metas[0].num_values as usize,
-                &mut scratchs[0]
+                &mut scratchs[0],
             )?;
             Ok((nested, array.boxed()))
         }
@@ -94,7 +93,7 @@ pub fn read_nested<R: NativeReadBuf>(
                 &leaves[0],
                 init,
                 page_metas[0].num_values as usize,
-                &mut scratchs[0]
+                &mut scratchs[0],
             )?;
             Ok((nested, array.boxed()))
         }
@@ -106,7 +105,7 @@ pub fn read_nested<R: NativeReadBuf>(
                 &leaves[0],
                 init,
                 page_metas[0].num_values as usize,
-                &mut scratchs[0]
+                &mut scratchs[0],
             )?;
             Ok((nested, array.boxed()))
         }
@@ -118,7 +117,7 @@ pub fn read_nested<R: NativeReadBuf>(
                 &leaves[0],
                 init,
                 page_metas[0].num_values as usize,
-                &mut scratchs[0]
+                &mut scratchs[0],
             )?;
             Ok((nested, array.boxed()))
         }
@@ -127,14 +126,8 @@ pub fn read_nested<R: NativeReadBuf>(
             | DataType::LargeList(inner)
             | DataType::FixedSizeList(inner, _) => {
                 init.push(InitNested::List(field.is_nullable));
-                let (mut nested, values) = read_nested(
-                    readers,
-                    *inner.clone(),
-                    leaves,
-                    page_metas,
-                    init,
-                    scratchs,
-                )?;
+                let (mut nested, values) =
+                    read_nested(readers, *inner.clone(), leaves, page_metas, init, scratchs)?;
                 let array = create_list(field.data_type().clone(), &mut nested, values);
                 Ok((nested, array))
             }
@@ -160,14 +153,10 @@ pub fn read_nested<R: NativeReadBuf>(
                     )?;
                     values.push(value);
                 }
-                let array = StructArray::new(
-                    field.data_type().clone(),
-                    values,
-                    None,
-                );
+                let array = StructArray::new(field.data_type().clone(), values, None);
                 Ok((NestedState::new(vec![]), array.boxed()))
             }
             _ => unreachable!(),
-        }
+        },
     }
 }

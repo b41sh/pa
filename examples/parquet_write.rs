@@ -4,7 +4,7 @@ use arrow::array::{ListArray, StructArray, Utf8Array};
 use arrow::datatypes::DataType;
 use arrow::offset::OffsetsBuffer;
 use arrow::{
-    array::{Array, Int32Array, BooleanArray},
+    array::{Array, BooleanArray, Int32Array},
     chunk::Chunk,
     datatypes::{Field, Schema},
     error::Result,

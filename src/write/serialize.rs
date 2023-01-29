@@ -10,25 +10,20 @@ use arrow::{
     array::*, bitmap::Bitmap, datatypes::PhysicalType, trusted_len::TrustedLen, types::NativeType,
 };
 
+use arrow::io::parquet::write::slice_nested_leaf;
+use arrow::io::parquet::write::write_def_levels;
+use arrow::io::parquet::write::write_rep_and_def;
 use arrow::io::parquet::write::Nested;
 use arrow::io::parquet::write::Version;
-use arrow::io::parquet::write::write_def_levels;
-use arrow::io::parquet::write::slice_nested_leaf;
-use arrow::io::parquet::write::write_rep_and_def;
 
 use parquet2::schema::types::PrimitiveType as ParquetPrimitiveType;
 
 use arrow::io::parquet::read::schema::is_nullable;
 
-
-
 use crate::with_match_primitive_type;
 
 use crate::compression;
 use crate::Compression;
-
-
-
 
 /**
 +-------------------+
@@ -59,22 +54,9 @@ pub fn write<W: Write>(
     //println!("\nnested.len()={:?}", nested.len());
     println!("\nnested.len()={:?}", nested.len());
     if nested.len() == 1 {
-        return write_simple(
-            w,
-            array,
-            type_,
-            compression,
-            scratch,
-        );
+        return write_simple(w, array, type_, compression, scratch);
     }
-    write_nested(
-        w,
-        array,
-        nested,
-        length,
-        compression,
-        scratch,
-    )
+    write_nested(w, array, nested, length, compression, scratch)
 }
 
 /// Writes an [`Array`] to `arrow_data`
@@ -89,22 +71,11 @@ pub fn write_simple<W: Write>(
 
     use PhysicalType::*;
     match array.data_type().to_physical_type() {
-        Null => {},
+        Null => {}
         Boolean => {
             let array: &BooleanArray = array.as_any().downcast_ref().unwrap();
-            write_validity::<W>(
-                w,
-                is_optional,
-                array.validity(),
-                array.len(),
-                scratch,
-            )?;
-            write_boolean::<W>(
-                w,
-                array,
-                compression,
-                scratch,
-            )?;
+            write_validity::<W>(w, is_optional, array.validity(), array.len(), scratch)?;
+            write_boolean::<W>(w, array, compression, scratch)?;
         }
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let array: &PrimitiveArray<$T> = array.as_any().downcast_ref().unwrap();
@@ -119,70 +90,26 @@ pub fn write_simple<W: Write>(
         }),
         Binary => {
             let array: &BinaryArray<i32> = array.as_any().downcast_ref().unwrap();
-            write_validity::<W>(
-                w,
-                is_optional,
-                array.validity(),
-                array.len(),
-                scratch,
-            )?;
-            write_binary::<i32, W>(
-                w,
-                array,
-                compression,
-                scratch,
-            )?;
+            write_validity::<W>(w, is_optional, array.validity(), array.len(), scratch)?;
+            write_binary::<i32, W>(w, array, compression, scratch)?;
         }
         LargeBinary => {
             let array: &BinaryArray<i64> = array.as_any().downcast_ref().unwrap();
-            write_validity::<W>(
-                w,
-                is_optional,
-                array.validity(),
-                array.len(),
-                scratch,
-            )?;
+            write_validity::<W>(w, is_optional, array.validity(), array.len(), scratch)?;
 
-            write_binary::<i64, W>(
-                w,
-                array,
-                compression,
-                scratch,
-            )?;
+            write_binary::<i64, W>(w, array, compression, scratch)?;
         }
         Utf8 => {
             let array: &Utf8Array<i32> = array.as_any().downcast_ref().unwrap();
-            write_validity::<W>(
-                w,
-                is_optional,
-                array.validity(),
-                array.len(),
-                scratch,
-            )?;
+            write_validity::<W>(w, is_optional, array.validity(), array.len(), scratch)?;
 
-            write_utf8::<i32, W>(
-                w,
-                array,
-                compression,
-                scratch,
-            )?;
+            write_utf8::<i32, W>(w, array, compression, scratch)?;
         }
         LargeUtf8 => {
             let array: &Utf8Array<i64> = array.as_any().downcast_ref().unwrap();
-            write_validity::<W>(
-                w,
-                is_optional,
-                array.validity(),
-                array.len(),
-                scratch,
-            )?;
+            write_validity::<W>(w, is_optional, array.validity(), array.len(), scratch)?;
 
-            write_utf8::<i64, W>(
-                w,
-                array,
-                compression,
-                scratch,
-            )?;
+            write_utf8::<i64, W>(w, array, compression, scratch)?;
         }
         Struct => unimplemented!(),
         List => unimplemented!(),
@@ -218,19 +145,13 @@ pub fn write_nested<W: Write>(
     println!("len={:?}", len);
 
     // 3. 写入 rep_levels 和 def_levels
-    write_nested_validity::<W>(
-        w,
-        nested,
-        length,
-        start,
-        scratch,
-    )?;
+    write_nested_validity::<W>(w, nested, length, start, scratch)?;
 
     let array = array.slice(start, len);
 
     use PhysicalType::*;
     match array.data_type().to_physical_type() {
-        Null => {},
+        Null => {}
         Boolean => write_boolean::<W>(
             w,
             array.as_any().downcast_ref().unwrap(),
@@ -277,7 +198,6 @@ pub fn write_nested<W: Write>(
     Ok(())
 }
 
-
 fn write_validity<W: Write>(
     w: &mut W,
     is_optional: bool,
@@ -289,7 +209,6 @@ fn write_validity<W: Write>(
 
     println!("\n\n ---------before scratch.len()={:?}", scratch.len());
     println!("---------before len={:?}", len);
-
 
     write_def_levels(scratch, is_optional, validity, len, Version::V2)?;
     let rep_levels_len = 0;
@@ -315,9 +234,7 @@ fn write_nested_validity<W: Write>(
 ) -> Result<()> {
     scratch.clear();
 
-    let (rep_levels_len, def_levels_len) =
-        write_rep_and_def(Version::V2, nested, scratch, start)?;
-
+    let (rep_levels_len, def_levels_len) = write_rep_and_def(Version::V2, nested, scratch, start)?;
 
     println!("\n\n----------scratch={:?}", scratch);
     println!("----------nested={:?}", nested);
@@ -331,8 +248,6 @@ fn write_nested_validity<W: Write>(
 
     Ok(())
 }
-
-
 
 fn write_primitive<T: NativeType, W: Write>(
     w: &mut W,

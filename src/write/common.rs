@@ -18,10 +18,10 @@ use super::{write, NativeWriter};
 use arrow::io::parquet::write::get_max_length;
 use arrow::io::parquet::write::slice_parquet_array;
 
-use arrow::io::parquet::write::SchemaDescriptor;
-use arrow::io::parquet::write::to_nested;
 use arrow::io::parquet::write::to_leaves;
+use arrow::io::parquet::write::to_nested;
 use arrow::io::parquet::write::to_parquet_leaves;
+use arrow::io::parquet::write::SchemaDescriptor;
 
 /// Options declaring the behaviour of writing to IPC
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -33,14 +33,22 @@ pub struct WriteOptions {
 }
 
 impl<W: Write> NativeWriter<W> {
-    pub fn encode_chunk(&mut self, schema_descriptor: SchemaDescriptor, chunk: &Chunk<Box<dyn Array>>) -> Result<()> {
+    pub fn encode_chunk(
+        &mut self,
+        schema_descriptor: SchemaDescriptor,
+        chunk: &Chunk<Box<dyn Array>>,
+    ) -> Result<()> {
         let page_size = self
             .options
             .max_page_size
             .unwrap_or(chunk.len())
             .min(chunk.len());
 
-        for (array, type_) in chunk.arrays().iter().zip(schema_descriptor.fields().to_vec()) {
+        for (array, type_) in chunk
+            .arrays()
+            .iter()
+            .zip(schema_descriptor.fields().to_vec())
+        {
             //let array = array.as_ref();
             //let nested = to_nested(array, &field).unwrap();
             //let types = to_data_type_leaves(&field);
@@ -49,13 +57,16 @@ impl<W: Write> NativeWriter<W> {
             println!("array={:?}", array);
             println!("type_={:?}", type_);
 
-
             let array = array.as_ref();
             let nested = to_nested(array, &type_)?;
             let types = to_parquet_leaves(type_);
             let leaf_arrays = to_leaves(array);
 
-            for ((leaf_array, nested), type_) in leaf_arrays.iter().zip(nested.into_iter()).zip(types.into_iter()) {
+            for ((leaf_array, nested), type_) in leaf_arrays
+                .iter()
+                .zip(nested.into_iter())
+                .zip(types.into_iter())
+            {
                 println!("leaf_array={:?}", leaf_array);
                 println!("nested={:?}", nested);
                 println!("type_={:?}", type_);
@@ -75,8 +86,8 @@ impl<W: Write> NativeWriter<W> {
                         let (sub_array, sub_nested) =
                             slice_parquet_array(leaf_array.as_ref(), &nested, offset, length);
 
-                println!("======sub_nested={:?}", sub_nested);
-                println!("======sub_array={:?}", sub_array);
+                        println!("======sub_nested={:?}", sub_nested);
+                        println!("======sub_array={:?}", sub_array);
 
                         let page_start = self.writer.offset;
                         write(
@@ -87,7 +98,8 @@ impl<W: Write> NativeWriter<W> {
                             length,
                             self.options.compression,
                             &mut self.scratch,
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         let page_end = self.writer.offset;
                         println!("page_start={:?} page_end={:?}", page_start, page_end);

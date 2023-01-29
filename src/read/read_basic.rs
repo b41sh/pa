@@ -11,12 +11,12 @@ use super::NativeReadBuf;
 use crate::{compression, Compression};
 
 use arrow::bitmap::MutableBitmap;
-use arrow::io::parquet::read::{InitNested, NestedState, init_nested};
+use arrow::io::parquet::read::{init_nested, InitNested, NestedState};
 
 use parquet2::{
-    encoding::hybrid_rle::{Decoder, HybridEncoded, BitmapIter, HybridRleDecoder},
-    read::levels::get_bit_width,
+    encoding::hybrid_rle::{BitmapIter, Decoder, HybridEncoded, HybridRleDecoder},
     metadata::ColumnDescriptor,
+    read::levels::get_bit_width,
 };
 
 fn read_swapped<T: NativeType, R: NativeReadBuf>(
@@ -188,7 +188,6 @@ pub fn read_validity<R: NativeReadBuf>(
     length: usize,
     scratch: &mut Vec<u8>,
 ) -> Result<Option<Bitmap>> {
-
     let _rep_levels_len = read_u32(reader)?;
     let def_levels_len = read_u32(reader)?;
     println!("def_levels_len={:?}", def_levels_len);
@@ -225,7 +224,6 @@ pub fn read_validity_nested<R: NativeReadBuf>(
     init: Vec<InitNested>,
     scratch: &mut Vec<u8>,
 ) -> Result<(NestedState, Option<Bitmap>)> {
-
     let offset_length = read_u32(reader)?;
     let rep_levels_len = read_u32(reader)?;
     let def_levels_len = read_u32(reader)?;
@@ -258,10 +256,8 @@ pub fn read_validity_nested<R: NativeReadBuf>(
     //let length = 10;
     println!("length={:?}", length);
 
-    let reps =
-        HybridRleDecoder::try_new(&rep_levels, get_bit_width(max_rep_level), length)?;
-    let defs =
-        HybridRleDecoder::try_new(&def_levels, get_bit_width(max_def_level), length)?;
+    let reps = HybridRleDecoder::try_new(&rep_levels, get_bit_width(max_rep_level), length)?;
+    let defs = HybridRleDecoder::try_new(&def_levels, get_bit_width(max_def_level), length)?;
 
     let mut page_iter = reps.zip(defs).peekable();
 
@@ -309,7 +305,8 @@ pub fn read_validity_nested<R: NativeReadBuf>(
         for depth in 0..max_depth {
             let right_level = rep <= cum_rep[depth] && def >= cum_sum[depth];
             if is_required || right_level {
-                let length = nested.nested
+                let length = nested
+                    .nested
                     .get(depth + 1)
                     .map(|x| x.len() as i64)
                     // the last depth is the leaf, which is always increased by 1
@@ -328,7 +325,10 @@ pub fn read_validity_nested<R: NativeReadBuf>(
 
                 if depth == max_depth - 1 {
                     // the leaf / primitive
-                    println!("------------1111nest.is_nullable()={:?}", nest.is_nullable());
+                    println!(
+                        "------------1111nest.is_nullable()={:?}",
+                        nest.is_nullable()
+                    );
                     is_nullable = nest.is_nullable();
                     if is_nullable {
                         let is_valid = (def != cum_sum[depth]) || !nest.is_nullable();

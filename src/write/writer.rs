@@ -11,7 +11,6 @@ use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 
 use arrow::io::parquet::write::to_parquet_schema;
 
-
 use crate::ColumnMeta;
 //use crate::SchemaDescriptor;
 
@@ -101,7 +100,6 @@ impl<W: Write> NativeWriter<W> {
             ));
         }
         assert_eq!(chunk.arrays().len(), self.schema.fields.len());
-
 
         //let schema_descriptor = SchemaDescriptor::new(self.schema.fields());
         //self.encode_chunk(schema_descriptor, chunk)?;

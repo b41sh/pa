@@ -3,10 +3,10 @@ use arrow::array::BinaryArray;
 use arrow::buffer::Buffer;
 use arrow::datatypes::DataType;
 use arrow::error::Result;
+use arrow::io::parquet::read::{InitNested, NestedState};
 use arrow::offset::OffsetsBuffer;
 use arrow::types::Offset;
 use parquet2::metadata::ColumnDescriptor;
-use arrow::io::parquet::read::{InitNested, NestedState};
 
 use super::super::read_basic::*;
 

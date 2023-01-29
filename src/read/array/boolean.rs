@@ -2,8 +2,8 @@ use crate::read::NativeReadBuf;
 use arrow::array::BooleanArray;
 use arrow::datatypes::DataType;
 use arrow::error::Result;
-use parquet2::metadata::ColumnDescriptor;
 use arrow::io::parquet::read::{InitNested, NestedState};
+use parquet2::metadata::ColumnDescriptor;
 
 use super::super::read_basic::*;
 

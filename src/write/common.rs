@@ -106,51 +106,6 @@ impl<W: Write> NativeWriter<W> {
             }
         }
 
-
-
-/**
-        for array in chunk.arrays() {
-            let start = self.writer.offset;
-            let mut page_metas = Vec::with_capacity(array.len() / page_size);
-
-            for offset in (0..array.len()).step_by(page_size) {
-                let page_start = self.writer.offset;
-                let num_values = if offset + page_size >= array.len() {
-                    array.len() - offset
-                } else {
-                    page_size
-                };
-                let sub_array = array.slice(offset, num_values);
-                self.write_array(sub_array.as_ref())?;
-
-                let page_end = self.writer.offset;
-
-                page_metas.push(PageMeta {
-                    length: (page_end - page_start) as u64,
-                    num_values: num_values as u64,
-                    definition_levels_byte_length: 0,
-                    repetition_levels_byte_length: 0,
-                });
-            }
-
-            self.metas.push(ColumnMeta {
-                offset: start,
-                pages: page_metas,
-            })
-        }
-*/
-
-/**
-    }
-
-    pub fn write_array(&mut self, array: &dyn Array) -> Result<()> {
-        write(
-            &mut self.writer,
-            array,
-            self.options.compression,
-            &mut self.scratch,
-        )
-*/
         Ok(())
     }
 }

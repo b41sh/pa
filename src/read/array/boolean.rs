@@ -24,7 +24,7 @@ pub fn read_boolean_nested<R: NativeReadBuf>(
     reader: &mut R,
     data_type: DataType,
     leaf: &ColumnDescriptor,
-    mut init: Vec<InitNested>,
+    init: Vec<InitNested>,
     length: usize,
     scratch: &mut Vec<u8>,
 ) -> Result<(NestedState, BooleanArray)> {

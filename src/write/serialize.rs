@@ -5,22 +5,18 @@ use std::io::Write;
 // false positive in clippy, see https://github.com/rust-lang/rust-clippy/issues/8463
 use arrow::error::Result;
 
-use arrow::buffer::Buffer;
-use arrow::datatypes::DataType;
 use arrow::types::Offset;
 use arrow::{
     array::*, bitmap::Bitmap, datatypes::PhysicalType, trusted_len::TrustedLen, types::NativeType,
 };
 
 use arrow::io::parquet::write::Nested;
-use arrow::io::parquet::write::ListNested;
 use arrow::io::parquet::write::Version;
 use arrow::io::parquet::write::write_def_levels;
 use arrow::io::parquet::write::slice_nested_leaf;
 use arrow::io::parquet::write::write_rep_and_def;
 
-use arrow::io::parquet::write::ParquetType;
-use arrow::io::parquet::write::ParquetPrimitiveType;
+use parquet2::schema::types::PrimitiveType as ParquetPrimitiveType;
 
 use arrow::io::parquet::read::schema::is_nullable;
 
@@ -75,7 +71,6 @@ pub fn write<W: Write>(
         w,
         array,
         nested,
-        type_,
         length,
         compression,
         scratch,
@@ -201,12 +196,10 @@ pub fn write_simple<W: Write>(
     Ok(())
 }
 
-
 pub fn write_nested<W: Write>(
     w: &mut W,
     array: &dyn Array,
     nested: &[Nested],
-    type_: ParquetPrimitiveType,
     length: usize,
     compression: Compression,
     scratch: &mut Vec<u8>,
@@ -214,7 +207,7 @@ pub fn write_nested<W: Write>(
     //println!("\n-----nested={:?}", nested);
     //println!("array.data_type()={:?}", array.data_type());
 
-    let is_optional = is_nullable(&type_.field_info);
+    //let is_optional = is_nullable(&type_.field_info);
 
     // we slice the leaf by the offsets as dremel only computes lengths and thus
     // does NOT take the starting offset into account.

@@ -11,9 +11,6 @@ use arrow::error::Result;
 use strawboat::read::reader::{infer_schema, read_meta, NativeReader};
 use strawboat::ColumnMeta;
 
-use strawboat::read::reader::NnativeReader;
-
-
 /// Simplest way: read all record batches from the file. This can be used e.g. for random access.
 // cargo run --example strawboat_file_read  --release /tmp/input.st
 fn main() -> Result<()> {
@@ -103,16 +100,13 @@ pub struct SchemaDescriptor {
                 scratchs.push(scratch);
             }
 
-
-            let pa_reader = NnativeReader::new(
+            let pa_reader = NativeReader::new(
                 page_readers,
                 field.clone(),
-                parquet_type.clone(),
                 curr_leaves,
                 curr_metas,
                 scratchs,
             );
-
             readers.push(pa_reader);
         }
 

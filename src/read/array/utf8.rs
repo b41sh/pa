@@ -35,7 +35,7 @@ pub fn read_utf8_nested<O: Offset, R: NativeReadBuf>(
     reader: &mut R,
     data_type: DataType,
     leaf: &ColumnDescriptor,
-    mut init: Vec<InitNested>,
+    init: Vec<InitNested>,
     length: usize,
     scratch: &mut Vec<u8>,
 ) -> Result<(NestedState, Utf8Array<O>)> {

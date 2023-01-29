@@ -52,8 +52,8 @@ fn read_chunk() -> (Chunk<Box<dyn Array>>, Schema) {
     let file_path = "/tmp/b.parquet";
     let file_path = "/tmp/a.parquet";
     let file_path = "/tmp/e.parquet";
-    let file_path = "/tmp/c.parquet";
     let file_path = "/tmp/d.parquet";
+    let file_path = "/tmp/c.parquet";
     let mut reader = File::open(file_path).unwrap();
 
     // we can read its metadata:

@@ -14,7 +14,6 @@ use super::super::read_basic::*;
 pub fn read_binary<O: Offset, R: NativeReadBuf>(
     reader: &mut R,
     data_type: DataType,
-
     length: usize,
     scratch: &mut Vec<u8>,
 ) -> Result<BinaryArray<O>> {
@@ -36,7 +35,7 @@ pub fn read_binary_nested<O: Offset, R: NativeReadBuf>(
     reader: &mut R,
     data_type: DataType,
     leaf: &ColumnDescriptor,
-    mut init: Vec<InitNested>,
+    init: Vec<InitNested>,
     length: usize,
     scratch: &mut Vec<u8>,
 ) -> Result<(NestedState, BinaryArray<O>)> {

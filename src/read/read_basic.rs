@@ -13,15 +13,11 @@ use crate::{compression, Compression};
 use arrow::bitmap::MutableBitmap;
 use arrow::io::parquet::read::{InitNested, NestedState, init_nested};
 
-
 use parquet2::{
     encoding::hybrid_rle::{Decoder, HybridEncoded, BitmapIter, HybridRleDecoder},
     read::levels::get_bit_width,
     metadata::ColumnDescriptor,
 };
-
-
-
 
 fn read_swapped<T: NativeType, R: NativeReadBuf>(
     reader: &mut R,
@@ -75,12 +71,6 @@ pub fn read_buffer<T: NativeType, R: NativeReadBuf>(
     let compression = Compression::from_codec(read_u8(reader)?)?;
     let compressed_size = read_u32(reader)? as usize;
     let uncompressed_size = read_u32(reader)? as usize;
-
-    println!("length={:?}", length);
-    println!("compression={:?}", compression);
-    println!("compressed_size={:?}", compressed_size);
-    println!("uncompressed_size={:?}", uncompressed_size);
-
 
     if compression.is_none() {
         return Ok(read_uncompressed_buffer(reader, length)?.into());
@@ -190,10 +180,6 @@ pub fn read_bitmap<R: NativeReadBuf>(
 +-------------------+
 |     values        |
 +-------------------+
-
-    w.write_all(&(rep_levels_len as u32).to_le_bytes())?;
-    w.write_all(&(def_levels_len as u32).to_le_bytes())?;
-    w.write_all(&scratch[..def_levels_len])?;
 */
 
 #[allow(clippy::too_many_arguments)]
@@ -232,68 +218,11 @@ pub fn read_validity<R: NativeReadBuf>(
     Ok(Some(std::mem::take(&mut builder).into()))
 }
 
-
-
-
-
-
-
-/**
-impl<'a> NestedPage<'a> {
-    pub fn try_new(page: &'a DataPage) -> Result<Self> {
-        let (rep_levels, def_levels, _) = split_buffer(page)?;
-
-        let max_rep_level = page.descriptor.max_rep_level;
-        let max_def_level = page.descriptor.max_def_level;
-
-        let reps =
-            HybridRleDecoder::try_new(rep_levels, get_bit_width(max_rep_level), page.num_values())?;
-        let defs =
-            HybridRleDecoder::try_new(def_levels, get_bit_width(max_def_level), page.num_values())?;
-
-        let iter = reps.zip(defs).peekable();
-
-        Ok(Self { iter })
-    }
-*/
-
-/**
-pub struct NestedPage<'a> {
-    iter: std::iter::Peekable<std::iter::Zip<HybridRleDecoder<'a>, HybridRleDecoder<'a>>>,
-}
-
-impl<'a> NestedPage<'a> {
-    pub fn try_new(page: &'a DataPage) -> Result<Self> {
-        let (rep_levels, def_levels, _) = split_buffer(page)?;
-
-        let max_rep_level = page.descriptor.max_rep_level;
-        let max_def_level = page.descriptor.max_def_level;
-
-        let reps =
-            HybridRleDecoder::try_new(rep_levels, get_bit_width(max_rep_level), page.num_values())?;
-        let defs =
-            HybridRleDecoder::try_new(def_levels, get_bit_width(max_def_level), page.num_values())?;
-
-        let iter = reps.zip(defs).peekable();
-
-        Ok(Self { iter })
-    }
-
-        let max_rep_level = leaf.descriptor.max_rep_level;
-        let max_def_level = leaf.descriptor.max_def_level;
-*/
-
-
-
-
-
-
-
 pub fn read_validity_nested<R: NativeReadBuf>(
     reader: &mut R,
     length: usize,
     leaf: &ColumnDescriptor,
-    mut init: Vec<InitNested>,
+    init: Vec<InitNested>,
     scratch: &mut Vec<u8>,
 ) -> Result<(NestedState, Option<Bitmap>)> {
 
@@ -340,11 +269,6 @@ pub fn read_validity_nested<R: NativeReadBuf>(
 
     println!("nested={:?}", nested);
 
-//nested=NestedState { nested: [NestedValid { offsets: [] }] }
-//00nested=NestedState { nested: [NestedValid { offsets: [] }, NestedPrimitive { is_nullable: false, length: 0 }] }
-//existing=0 additional=4
-
-
     let additional = offset_length;
     println!("additional={:?}", additional);
 
@@ -364,22 +288,6 @@ pub fn read_validity_nested<R: NativeReadBuf>(
     println!("max_depth={:?}", max_depth);
     println!("cum_sum={:?}", cum_sum);
     println!("cum_rep={:?}", cum_rep);
-
-/**
-rep=0, def=1
-rep=1, def=1
-rep=1, def=1
-rep=0, def=1
-
-right_level=true
-is_valid=true
-additional=4 next_rep=1 rows=1
-additional=4 next_rep=1 rows=1
-additional=4 next_rep=0 rows=1
-right_level=true
-is_valid=true
-additional=4 next_rep=0 rows=2
-*/
 
     let mut is_nullable = false;
     let mut builder = MutableBitmap::with_capacity(length);
@@ -442,18 +350,11 @@ additional=4 next_rep=0 rows=2
             .transpose()
             .unwrap() // todo: fix this
             .unwrap_or(&0);
-        println!("additional={:?} next_rep={:?} rows={:?}", additional, next_rep, rows);
 
         if next_rep == 0 && rows == additional {
             break;
         }
     }
-
-//nested=NestedState { nested: [NestedValid { offsets: [0, 3, 5, 9] }, NestedPrimitive { is_nullable: false, length: 10 }] }
-//nested=[NestedValid { offsets: [0, 3, 5, 9] }, NestedPrimitive { is_nullable: false, length: 9 }]
-
-    println!("nested={:?}", nested);
-    println!("base_type={:?}", leaf.base_type);
 
     let validity = if is_nullable {
         Some(std::mem::take(&mut builder).into())
@@ -463,20 +364,6 @@ additional=4 next_rep=0 rows=2
 
     Ok((nested, validity))
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 pub fn read_u8<R: Read>(r: &mut R) -> Result<u8> {
     let mut buf = [0; 1];

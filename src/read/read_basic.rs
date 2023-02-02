@@ -68,9 +68,11 @@ pub fn read_buffer<T: NativeType, R: NativeReadBuf>(
     length: usize,
     scratch: &mut Vec<u8>,
 ) -> Result<Buffer<T>> {
-    let compression = Compression::from_codec(read_u8(reader)?)?;
-    let compressed_size = read_u32(reader)? as usize;
-    let uncompressed_size = read_u32(reader)? as usize;
+    scratch.resize(1, 0);
+    let compression = Compression::from_codec(read_u8(reader, scratch.as_mut_slice())?)?;
+    scratch.resize(4, 0);
+    let compressed_size = read_u32(reader, scratch.as_mut_slice())? as usize;
+    let uncompressed_size = read_u32(reader, scratch.as_mut_slice())? as usize;
 
     if compression.is_none() {
         return Ok(read_uncompressed_buffer(reader, length)?.into());
@@ -117,13 +119,14 @@ pub fn read_bitmap<R: NativeReadBuf>(
     scratch: &mut Vec<u8>,
 ) -> Result<Bitmap> {
     let bytes = (length + 7) / 8;
-    let mut buffer = vec![0u8; bytes];
-
-    let compression = Compression::from_codec(read_u8(reader)?)?;
-    let compressed_size = read_u32(reader)? as usize;
-    let uncompressed_size = read_u32(reader)? as usize;
+    scratch.resize(1, 0);
+    let compression = Compression::from_codec(read_u8(reader, scratch.as_mut_slice())?)?;
+    scratch.resize(4, 0);
+    let compressed_size = read_u32(reader, scratch.as_mut_slice())? as usize;
+    let uncompressed_size = read_u32(reader, scratch.as_mut_slice())? as usize;
 
     assert_eq!(uncompressed_size, bytes);
+    let mut buffer = vec![0u8; bytes];
 
     if compression.is_none() {
         reader
@@ -169,9 +172,11 @@ pub fn read_validity<R: NativeReadBuf>(
     length: usize,
     scratch: &mut Vec<u8>,
 ) -> Result<Option<Bitmap>> {
-    let _offsets_len = read_u32(reader)?;
-    let _rep_levels_len = read_u32(reader)?;
-    let def_levels_len = read_u32(reader)?;
+    // skip unused offsets_len and rep_levels_len
+    scratch.resize(8, 0);
+    reader.read_exact(scratch.as_mut_slice())?;
+    scratch.resize(4, 0);
+    let def_levels_len = read_u32(reader, scratch.as_mut_slice())?;
 
     if def_levels_len == 0 {
         return Ok(None);
@@ -205,9 +210,10 @@ pub fn read_validity_nested<R: NativeReadBuf>(
 ) -> Result<(NestedState, Option<Bitmap>)> {
     // If the Array is a List, additional is the length of offsets,
     // otherwise additional is equal to length.
-    let additional = read_u32(reader)?;
-    let rep_levels_len = read_u32(reader)?;
-    let def_levels_len = read_u32(reader)?;
+    scratch.resize(4, 0);
+    let additional = read_u32(reader, scratch.as_mut_slice())?;
+    let rep_levels_len = read_u32(reader, scratch.as_mut_slice())?;
+    let def_levels_len = read_u32(reader, scratch.as_mut_slice())?;
 
     let max_rep_level = leaf.descriptor.max_rep_level;
     let max_def_level = leaf.descriptor.max_def_level;
@@ -312,20 +318,20 @@ pub fn read_validity_nested<R: NativeReadBuf>(
     Ok((nested, validity))
 }
 
-pub fn read_u8<R: Read>(r: &mut R) -> Result<u8> {
-    let mut buf = [0; 1];
-    r.read_exact(&mut buf)?;
+#[inline(always)]
+pub fn read_u8<R: Read>(r: &mut R, buf: &mut [u8]) -> Result<u8> {
+    r.read_exact(buf)?;
     Ok(buf[0])
 }
 
-pub fn read_u32<R: Read>(r: &mut R) -> Result<u32> {
-    let mut buf = [0; 4];
-    r.read_exact(&mut buf)?;
-    Ok(u32::from_le_bytes(buf))
+#[inline(always)]
+pub fn read_u32<R: Read>(r: &mut R, buf: &mut [u8]) -> Result<u32> {
+    r.read_exact(buf)?;
+    Ok(u32::from_le_bytes(buf.try_into().unwrap()))
 }
 
-pub fn read_u64<R: Read>(r: &mut R) -> Result<u64> {
-    let mut buf = [0; 8];
-    r.read_exact(&mut buf)?;
-    Ok(u64::from_le_bytes(buf))
+#[inline(always)]
+pub fn read_u64<R: Read>(r: &mut R, buf: &mut [u8]) -> Result<u64> {
+    r.read_exact(buf)?;
+    Ok(u64::from_le_bytes(buf.try_into().unwrap()))
 }

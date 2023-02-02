@@ -62,7 +62,7 @@ impl<R: NativeReadBuf> NativeReader<R> {
 
             deserialize::read_simple(
                 &mut self.page_readers[0],
-                self.field.data_type().clone(),
+                self.field.clone(),
                 page_meta.num_values as usize,
                 &mut self.scratchs[0],
             )?

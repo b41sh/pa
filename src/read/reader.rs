@@ -28,6 +28,47 @@ pub fn is_primitive(data_type: &DataType) -> bool {
     )
 }
 
+#[derive(Debug)]
+pub struct NnativeReader<R: NativeReadBuf> {
+    // The source
+    page_reader: R,
+    page_metas: Vec<PageMeta>,
+    current_page: usize,
+    // The currently allocated buffer.
+    scratch: Vec<u8>,
+}
+
+impl<R: NativeReadBuf> NnativeReader<R> {
+    pub fn new(page_reader: R, page_metas: Vec<PageMeta>, scratch: Vec<u8>) -> Self {
+        Self {
+            page_reader,
+            page_metas,
+            current_page: 0,
+            scratch,
+        }
+    }
+
+    pub fn current_page(&self) -> usize {
+        self.current_page
+    }
+}
+
+impl<R: NativeReadBuf> Iterator for NnativeReader<R> {
+    type Item = Result<(u64, Vec<u8>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_page == self.page_metas.len() {
+            return None;
+        }
+        let page_meta = &self.page_metas[self.current_page];
+        self.scratch.resize(page_meta.length as usize, 0);
+        // todo
+        self.page_reader.read_exact(&mut self.scratch).unwrap();
+        self.current_page += 1;
+        Some(Ok((page_meta.num_values, self.scratch.clone())))
+    }
+}
+
 pub struct NativeReader<R: NativeReadBuf> {
     page_readers: Vec<R>,
     field: Field,

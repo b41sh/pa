@@ -3,10 +3,14 @@ use crate::PageMeta;
 use arrow::array::*;
 use arrow::datatypes::{DataType, Field, PhysicalType};
 use arrow::error::Result;
-use arrow::io::parquet::read::{create_list, n_columns, InitNested, NestedState};
+use arrow::io::parquet::read::{create_list, n_columns, ArrayIter, InitNested, NestedState};
 use parquet2::metadata::ColumnDescriptor;
 
+use super::reader::NnativeReader;
 use super::{array::*, NativeReadBuf};
+
+pub type NestedArrayIter<'a> =
+    Box<dyn Iterator<Item = Result<(NestedState, Box<dyn Array>)>> + Send + Sync + 'a>;
 
 pub fn read_simple<R: NativeReadBuf>(
     reader: &mut R,
@@ -170,4 +174,64 @@ pub fn read_nested<R: NativeReadBuf>(
             _ => unreachable!(),
         },
     }
+}
+
+#[inline]
+fn dyn_iter<'a, A, I>(iter: I) -> ArrayIter<'a>
+where
+    A: Array,
+    I: Iterator<Item = Result<A>> + Send + Sync + 'a,
+{
+    Box::new(iter.map(|x| x.map(|x| Box::new(x) as Box<dyn Array>)))
+}
+
+pub fn page_iter_to_arrays<'a, I: 'a>(reader: I, field: Field) -> Result<ArrayIter<'a>>
+where
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
+{
+    use DataType::*;
+
+    let is_nullable = field.is_nullable;
+    let data_type = field.data_type().clone();
+
+    Ok(match data_type.to_logical_type() {
+        Boolean => dyn_iter(BooleanIter::new(reader, is_nullable, data_type)),
+        //_ => todo!(),
+        _ => unreachable!(),
+    })
+}
+
+fn columns_to_iter_recursive<'a, I: 'a>(
+    mut readers: Vec<I>,
+    mut leaves: &mut Vec<ColumnDescriptor>,
+    field: Field,
+    init: Vec<InitNested>,
+    is_nested: bool,
+) -> Result<NestedArrayIter<'a>>
+where
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
+{
+    if !is_nested {
+        Ok(Box::new(
+            page_iter_to_arrays(readers.pop().unwrap(), field)?
+                .map(|x| Ok((NestedState::new(vec![]), x?))),
+        ))
+    } else {
+        todo!()
+    }
+}
+
+pub fn column_iter_to_arrays<'a, I: 'a>(
+    readers: Vec<I>,
+    leaves: &mut Vec<ColumnDescriptor>,
+    field: Field,
+    is_nested: bool,
+) -> Result<ArrayIter<'a>>
+where
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
+{
+    Ok(Box::new(
+        columns_to_iter_recursive(readers, leaves, field, vec![], is_nested)?
+            .map(|x| x.map(|x| x.1)),
+    ))
 }

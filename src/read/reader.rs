@@ -51,11 +51,11 @@ impl<R: NativeReadBuf> NativeReader<R> {
     }
 }
 
-impl<R: NativeReadBuf> PageIterator for NativeReader<R> {
-    fn swap_buffer(&mut self, scratch: &mut Vec<u8>) {
-        std::mem::swap(&mut self.scratch, scratch)
-    }
-}
+//impl<R: NativeReadBuf> PageIterator for NativeReader<R> {
+//    fn swap_buffer(&mut self, scratch: &mut Vec<u8>) {
+//        std::mem::swap(&mut self.scratch, scratch)
+//    }
+//}
 
 impl<R: NativeReadBuf> Iterator for NativeReader<R> {
     type Item = Result<(u64, Vec<u8>)>;
@@ -64,7 +64,8 @@ impl<R: NativeReadBuf> Iterator for NativeReader<R> {
         if self.current_page == self.page_metas.len() {
             return None;
         }
-        let mut buffer = std::mem::take(&mut self.scratch);
+        //let mut buffer = std::mem::take(&mut self.scratch);
+        let mut buffer = vec![];
         let page_meta = &self.page_metas[self.current_page];
         buffer.resize(page_meta.length as usize, 0);
         if let Some(err) = self.page_reader.read_exact(&mut buffer).err() {

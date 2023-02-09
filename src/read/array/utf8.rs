@@ -14,7 +14,7 @@ use parquet2::metadata::ColumnDescriptor;
 #[derive(Debug)]
 pub struct Utf8Iter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     O: Offset,
 {
     iter: I,
@@ -26,7 +26,7 @@ where
 
 impl<I, O> Utf8Iter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     O: Offset,
 {
     pub fn new(iter: I, is_nullable: bool, data_type: DataType) -> Self {
@@ -42,7 +42,7 @@ where
 
 impl<I, O> Iterator for Utf8Iter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     O: Offset,
 {
     type Item = Result<Utf8Array<O>>;
@@ -84,8 +84,6 @@ where
                 return Some(Result::Err(err));
             }
         };
-        let mut buffer = reader.into_inner().into_inner();
-        self.iter.swap_buffer(&mut buffer);
 
         Some(Utf8Array::<O>::try_new(
             self.data_type.clone(),
@@ -99,7 +97,7 @@ where
 #[derive(Debug)]
 pub struct Utf8NestedIter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     O: Offset,
 {
     iter: I,
@@ -112,7 +110,7 @@ where
 
 impl<I, O> Utf8NestedIter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     O: Offset,
 {
     pub fn new(
@@ -134,7 +132,7 @@ where
 
 impl<I, O> Iterator for Utf8NestedIter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     O: Offset,
 {
     type Item = Result<(NestedState, Utf8Array<O>)>;
@@ -172,8 +170,6 @@ where
                 return Some(Result::Err(err));
             }
         };
-        let mut buffer = reader.into_inner().into_inner();
-        self.iter.swap_buffer(&mut buffer);
 
         let array = match Utf8Array::<O>::try_new(
             self.data_type.clone(),

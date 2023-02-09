@@ -11,7 +11,7 @@ use std::convert::TryInto;
 
 pub struct PrimitiveIter<I, T>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     T: NativeType,
 {
     iter: I,
@@ -23,7 +23,7 @@ where
 
 impl<I, T> PrimitiveIter<I, T>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     T: NativeType,
 {
     pub fn new(iter: I, is_nullable: bool, data_type: DataType) -> Self {
@@ -39,7 +39,7 @@ where
 
 impl<I, T> Iterator for PrimitiveIter<I, T>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     T: NativeType,
     Vec<u8>: TryInto<T::Bytes>,
 {
@@ -74,8 +74,6 @@ where
                 return Some(Result::Err(err));
             }
         };
-        let mut buffer = reader.into_inner().into_inner();
-        self.iter.swap_buffer(&mut buffer);
 
         Some(PrimitiveArray::<T>::try_new(
             self.data_type.clone(),
@@ -88,7 +86,7 @@ where
 #[derive(Debug)]
 pub struct PrimitiveNestedIter<I, T>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     T: NativeType,
 {
     iter: I,
@@ -101,7 +99,7 @@ where
 
 impl<I, T> PrimitiveNestedIter<I, T>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     T: NativeType,
 {
     pub fn new(
@@ -123,7 +121,7 @@ where
 
 impl<I, T> Iterator for PrimitiveNestedIter<I, T>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
     T: NativeType,
     Vec<u8>: TryInto<T::Bytes>,
 {
@@ -155,8 +153,6 @@ where
                 return Some(Result::Err(err));
             }
         };
-        let mut buffer = reader.into_inner().into_inner();
-        self.iter.swap_buffer(&mut buffer);
 
         let array = match PrimitiveArray::<T>::try_new(self.data_type.clone(), values, validity) {
             Ok(array) => array,

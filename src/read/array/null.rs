@@ -4,7 +4,7 @@ use arrow::{array::NullArray, datatypes::DataType, error::Result};
 #[derive(Debug)]
 pub struct NullIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
 {
     iter: I,
     data_type: DataType,
@@ -12,7 +12,7 @@ where
 
 impl<I> NullIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
 {
     pub fn new(iter: I, data_type: DataType) -> Self {
         Self { iter, data_type }
@@ -21,7 +21,7 @@ where
 
 impl<I> Iterator for NullIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
 {
     type Item = Result<NullArray>;
 
@@ -36,7 +36,6 @@ where
             }
         };
 
-        self.iter.swap_buffer(&mut buffer);
         let length = num_values as usize;
         Some(NullArray::try_new(self.data_type.clone(), length))
     }

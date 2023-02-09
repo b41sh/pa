@@ -10,7 +10,7 @@ use parquet2::metadata::ColumnDescriptor;
 #[derive(Debug)]
 pub struct BooleanIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
 {
     iter: I,
     is_nullable: bool,
@@ -20,7 +20,7 @@ where
 
 impl<I> BooleanIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
 {
     pub fn new(iter: I, is_nullable: bool, data_type: DataType) -> Self {
         Self {
@@ -34,7 +34,7 @@ where
 
 impl<I> Iterator for BooleanIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
 {
     type Item = Result<BooleanArray>;
 
@@ -67,8 +67,6 @@ where
                 return Some(Result::Err(err));
             }
         };
-        let mut buffer = reader.into_inner().into_inner();
-        self.iter.swap_buffer(&mut buffer);
 
         Some(BooleanArray::try_new(
             self.data_type.clone(),
@@ -81,7 +79,7 @@ where
 #[derive(Debug)]
 pub struct BooleanNestedIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
 {
     iter: I,
     data_type: DataType,
@@ -92,7 +90,7 @@ where
 
 impl<I> BooleanNestedIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
 {
     pub fn new(
         iter: I,
@@ -112,7 +110,7 @@ where
 
 impl<I> Iterator for BooleanNestedIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(u64, Vec<u8>)>> + Send + Sync,
 {
     type Item = Result<(NestedState, BooleanArray)>;
 
@@ -142,8 +140,6 @@ where
                 return Some(Result::Err(err));
             }
         };
-        let mut buffer = reader.into_inner().into_inner();
-        self.iter.swap_buffer(&mut buffer);
 
         let array = match BooleanArray::try_new(self.data_type.clone(), values, validity) {
             Ok(array) => array,

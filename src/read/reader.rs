@@ -30,6 +30,7 @@ pub struct NativeReader<R: NativeReadBuf> {
     page_metas: Vec<PageMeta>,
     current_page: usize,
     scratch: Vec<u8>,
+    skip_pages: Option<Vec<bool>>,
 }
 
 impl<R: NativeReadBuf> NativeReader<R> {
@@ -39,6 +40,7 @@ impl<R: NativeReadBuf> NativeReader<R> {
             page_metas,
             current_page: 0,
             scratch,
+            skip_pages: None,
         }
     }
 
@@ -49,6 +51,11 @@ impl<R: NativeReadBuf> NativeReader<R> {
     pub fn current_page(&self) -> usize {
         self.current_page
     }
+
+    pub fn set_skip_pages(&mut self, skip_pages: Vec<bool>) {
+        assert_eq!(self.page_metas.len(), skip_pages.len());
+        self.skip_pages = Some(skip_pages)
+    }
 }
 
 impl<R: NativeReadBuf> PageIterator for NativeReader<R> {
@@ -57,10 +64,27 @@ impl<R: NativeReadBuf> PageIterator for NativeReader<R> {
     }
 }
 
-impl<R: NativeReadBuf> Iterator for NativeReader<R> {
+impl<R: NativeReadBuf + std::io::Seek> Iterator for NativeReader<R> {
     type Item = Result<(u64, Vec<u8>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        while self.current_page < self.page_metas.len() {
+            if let Some(skip_pages) = &self.skip_pages {
+                if skip_pages[self.current_page] {
+                    let page_meta = &self.page_metas[self.current_page];
+                    if let Some(err) = self
+                        .page_reader
+                        .seek(SeekFrom::Current(page_meta.length as i64))
+                        .err()
+                    {
+                        return Some(Result::Err(err.into()));
+                    }
+                    self.current_page += 1;
+                    continue;
+                }
+            }
+            break;
+        }
         if self.current_page == self.page_metas.len() {
             return None;
         }

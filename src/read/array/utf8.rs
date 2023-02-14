@@ -73,7 +73,7 @@ where
         let out_off_len = num_values + 2;
         // don't know how much space is needed for the buffer,
         // if not enough, it may need to be allocated several times
-        let out_buf_len = buffer.len() * 5;
+        let out_buf_len = buffer.len() * 4;
         let mut out_offsets: Vec<O> = Vec::with_capacity(out_off_len);
         let mut out_buffer: Vec<u8> = Vec::with_capacity(out_buf_len);
 

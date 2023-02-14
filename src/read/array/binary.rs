@@ -1,8 +1,9 @@
-use std::io::Cursor;
+use std::io::{Cursor, Seek, SeekFrom};
 use std::marker::PhantomData;
 
-use crate::read::{read_basic::*, BufReader, PageIterator};
+use crate::read::{read_basic::*, BufReader, PageInfo, PageIterator};
 use arrow::array::BinaryArray;
+use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::datatypes::DataType;
 use arrow::error::Result;
@@ -14,7 +15,7 @@ use parquet2::metadata::ColumnDescriptor;
 #[derive(Debug)]
 pub struct BinaryIter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
     O: Offset,
 {
     iter: I,
@@ -26,7 +27,7 @@ where
 
 impl<I, O> BinaryIter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
     O: Offset,
 {
     pub fn new(iter: I, is_nullable: bool, data_type: DataType) -> Self {
@@ -42,14 +43,14 @@ where
 
 impl<I, O> Iterator for BinaryIter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
     O: Offset,
 {
     type Item = Result<BinaryArray<O>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (num_values, buffer) = match self.iter.next() {
-            Some(Ok((num_values, buffer))) => (num_values, buffer),
+        let (page_infos, buffer) = match self.iter.next() {
+            Some(Ok((page_infos, buffer))) => (page_infos, buffer),
             Some(Err(err)) => {
                 return Some(Result::Err(err));
             }
@@ -57,35 +58,91 @@ where
                 return None;
             }
         };
+        let num_values = page_infos
+            .iter()
+            .map(|p| if p.is_skip { 0 } else { p.num_values })
+            .sum();
 
-        let length = num_values as usize;
+        let mut off_offset = 0;
+        let mut buf_offset = 0;
+        let mut validity_builder = if self.is_nullable {
+            MutableBitmap::with_capacity(num_values)
+        } else {
+            MutableBitmap::new()
+        };
+        let out_off_len = num_values + 2;
+        // todo caculate real length of buffer
+        let out_buf_len = buffer.len();
+        let mut out_offsets: Vec<O> = Vec::with_capacity(out_off_len);
+        let mut out_buffer: Vec<u8> = Vec::with_capacity(out_buf_len);
+
         let mut reader = BufReader::with_capacity(buffer.len(), Cursor::new(buffer));
-        let validity = if self.is_nullable {
-            match read_validity(&mut reader, length) {
-                Ok(validity) => validity,
-                Err(err) => {
+        for page_info in page_infos {
+            if page_info.is_skip {
+                if let Some(err) = reader
+                    .seek(SeekFrom::Current(page_info.length as i64))
+                    .err()
+                {
+                    return Some(Result::Err(err.into()));
+                }
+                continue;
+            }
+            let length = page_info.num_values;
+            if self.is_nullable {
+                if let Some(err) = read_validity(&mut reader, length, &mut validity_builder).err() {
                     return Some(Result::Err(err));
                 }
             }
+            let start_offset = out_offsets.last().copied();
+            if let Some(err) = read_buffer(
+                &mut reader,
+                off_offset,
+                length + 1,
+                &mut self.scratch,
+                &mut out_offsets,
+            )
+            .err()
+            {
+                return Some(Result::Err(err));
+            }
+
+            let last_offset = out_offsets.last().unwrap().to_usize();
+            if let Some(start_offset) = start_offset {
+                for i in out_offsets.len() - length - 1..out_offsets.len() - 1 {
+                    unsafe {
+                        let next_val = *out_offsets.get_unchecked(i + 1);
+                        let val = out_offsets.get_unchecked_mut(i);
+                        *val = start_offset + next_val;
+                    }
+                }
+                unsafe { out_offsets.set_len(out_offsets.len() - 1) };
+                off_offset += length;
+            } else {
+                off_offset += length + 1;
+            }
+            if let Some(err) = read_buffer(
+                &mut reader,
+                buf_offset,
+                last_offset,
+                &mut self.scratch,
+                &mut out_buffer,
+            )
+            .err()
+            {
+                return Some(Result::Err(err));
+            }
+            buf_offset += last_offset;
+        }
+        let mut buffer = reader.into_inner().into_inner();
+        self.iter.swap_buffer(&mut buffer);
+
+        let validity = if self.is_nullable {
+            Some(std::mem::take(&mut validity_builder).into())
         } else {
             None
         };
-
-        let offsets: Buffer<O> = match read_buffer(&mut reader, 1 + length, &mut self.scratch) {
-            Ok(offsets) => offsets,
-            Err(err) => {
-                return Some(Result::Err(err));
-            }
-        };
-        let last_offset = offsets.last().unwrap().to_usize();
-        let values = match read_buffer(&mut reader, last_offset, &mut self.scratch) {
-            Ok(values) => values,
-            Err(err) => {
-                return Some(Result::Err(err));
-            }
-        };
-        let mut buffer = reader.into_inner().into_inner();
-        self.iter.swap_buffer(&mut buffer);
+        let offsets: Buffer<O> = std::mem::take(&mut out_offsets).into();
+        let values: Buffer<u8> = std::mem::take(&mut out_buffer).into();
 
         Some(BinaryArray::<O>::try_new(
             self.data_type.clone(),
@@ -99,7 +156,7 @@ where
 #[derive(Debug)]
 pub struct BinaryNestedIter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
     O: Offset,
 {
     iter: I,
@@ -112,7 +169,7 @@ where
 
 impl<I, O> BinaryNestedIter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
     O: Offset,
 {
     pub fn new(
@@ -134,14 +191,14 @@ where
 
 impl<I, O> Iterator for BinaryNestedIter<I, O>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
     O: Offset,
 {
     type Item = Result<(NestedState, BinaryArray<O>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (num_values, buffer) = match self.iter.next() {
-            Some(Ok((num_values, buffer))) => (num_values, buffer),
+        let (page_infos, buffer) = match self.iter.next() {
+            Some(Ok((page_infos, buffer))) => (page_infos, buffer),
             Some(Err(err)) => {
                 return Some(Result::Err(err));
             }
@@ -149,8 +206,8 @@ where
                 return None;
             }
         };
-
-        let length = num_values as usize;
+        // todo read multi pages
+        let length = page_infos[0].num_values;
         let mut reader = BufReader::with_capacity(buffer.len(), Cursor::new(buffer));
         let (nested, validity) =
             match read_validity_nested(&mut reader, length, &self.leaf, self.init.clone()) {
@@ -159,21 +216,33 @@ where
                     return Some(Result::Err(err));
                 }
             };
-        let offsets: Buffer<O> = match read_buffer(&mut reader, 1 + length, &mut self.scratch) {
-            Ok(offsets) => offsets,
-            Err(err) => {
-                return Some(Result::Err(err));
-            }
-        };
-        let last_offset = offsets.last().unwrap().to_usize();
-        let values = match read_buffer(&mut reader, last_offset, &mut self.scratch) {
-            Ok(values) => values,
-            Err(err) => {
-                return Some(Result::Err(err));
-            }
-        };
+
+        let mut out_offsets: Vec<O> = Vec::with_capacity(length + 1);
+        if let Some(err) =
+            read_buffer(&mut reader, 0, length, &mut self.scratch, &mut out_offsets).err()
+        {
+            return Some(Result::Err(err));
+        }
+
+        let last_offset = out_offsets.last().unwrap().to_usize();
+        let mut out_buffer: Vec<u8> = Vec::with_capacity(last_offset);
+        if let Some(err) = read_buffer(
+            &mut reader,
+            0,
+            last_offset,
+            &mut self.scratch,
+            &mut out_buffer,
+        )
+        .err()
+        {
+            return Some(Result::Err(err));
+        }
+
         let mut buffer = reader.into_inner().into_inner();
         self.iter.swap_buffer(&mut buffer);
+
+        let offsets: Buffer<O> = std::mem::take(&mut out_offsets).into();
+        let values: Buffer<u8> = std::mem::take(&mut out_buffer).into();
 
         let array = match BinaryArray::<O>::try_new(
             self.data_type.clone(),

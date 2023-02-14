@@ -2,7 +2,7 @@ use crate::{ColumnMeta, PageMeta};
 
 use super::{
     read_basic::{read_u32, read_u64},
-    NativeReadBuf, PageIterator,
+    NativeReadBuf, PageInfo, PageIterator,
 };
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{DataType, PhysicalType, Schema};
@@ -31,6 +31,7 @@ pub struct NativeReader<R: NativeReadBuf> {
     page_metas: Vec<PageMeta>,
     current_page: usize,
     scratch: Vec<u8>,
+    max_pages: Option<usize>,
     skip_pages: Option<Bitmap>,
 }
 
@@ -41,6 +42,7 @@ impl<R: NativeReadBuf> NativeReader<R> {
             page_metas,
             current_page: 0,
             scratch,
+            max_pages: None,
             skip_pages: None,
         }
     }
@@ -57,6 +59,11 @@ impl<R: NativeReadBuf> NativeReader<R> {
         assert_eq!(self.page_metas.len(), skip_pages.len());
         self.skip_pages = Some(skip_pages)
     }
+
+    pub fn set_max_pages(&mut self, max_pages: usize) {
+        assert!(max_pages > 0);
+        self.max_pages = Some(max_pages)
+    }
 }
 
 impl<R: NativeReadBuf> PageIterator for NativeReader<R> {
@@ -66,7 +73,7 @@ impl<R: NativeReadBuf> PageIterator for NativeReader<R> {
 }
 
 impl<R: NativeReadBuf + std::io::Seek> Iterator for NativeReader<R> {
-    type Item = Result<(u64, Vec<u8>)>;
+    type Item = Result<(Vec<PageInfo>, Vec<u8>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.current_page < self.page_metas.len() {
@@ -84,14 +91,48 @@ impl<R: NativeReadBuf + std::io::Seek> Iterator for NativeReader<R> {
         if self.current_page == self.page_metas.len() {
             return None;
         }
+        let mut pages = 0;
+        let mut buf_size = 0;
+        let mut page_infos = Vec::new();
+        while self.current_page < self.page_metas.len() {
+            let page_meta = &self.page_metas[self.current_page];
+            buf_size += page_meta.length as usize;
+            if let Some(skip_pages) = &self.skip_pages {
+                let is_skip = unsafe { skip_pages.get_bit_unchecked(self.current_page) };
+                if is_skip {
+                    let page_info = PageInfo::new(
+                        page_meta.length as usize,
+                        page_meta.num_values as usize,
+                        true,
+                    );
+                    page_infos.push(page_info);
+                    self.current_page += 1;
+                    continue;
+                }
+            }
+            self.current_page += 1;
+            let page_info = PageInfo::new(
+                page_meta.length as usize,
+                page_meta.num_values as usize,
+                false,
+            );
+            page_infos.push(page_info);
+            pages += 1;
+            if let Some(max_pages) = self.max_pages {
+                if pages >= max_pages {
+                    break;
+                } else {
+                    continue;
+                }
+            }
+            break;
+        }
         let mut buffer = std::mem::take(&mut self.scratch);
-        let page_meta = &self.page_metas[self.current_page];
-        buffer.resize(page_meta.length as usize, 0);
+        buffer.resize(buf_size, 0);
         if let Some(err) = self.page_reader.read_exact(&mut buffer).err() {
             return Some(Result::Err(err.into()));
         }
-        self.current_page += 1;
-        Some(Ok((page_meta.num_values, buffer)))
+        Some(Ok((page_infos, buffer)))
     }
 }
 

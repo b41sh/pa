@@ -1,10 +1,10 @@
-use crate::read::PageIterator;
+use crate::read::{PageInfo, PageIterator};
 use arrow::{array::NullArray, datatypes::DataType, error::Result};
 
 #[derive(Debug)]
 pub struct NullIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
 {
     iter: I,
     data_type: DataType,
@@ -12,7 +12,7 @@ where
 
 impl<I> NullIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
 {
     pub fn new(iter: I, data_type: DataType) -> Self {
         Self { iter, data_type }
@@ -21,13 +21,13 @@ where
 
 impl<I> Iterator for NullIter<I>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
 {
     type Item = Result<NullArray>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (num_values, mut buffer) = match self.iter.next() {
-            Some(Ok((num_values, buffer))) => (num_values, buffer),
+        let (page_infos, mut buffer) = match self.iter.next() {
+            Some(Ok((page_infos, buffer))) => (page_infos, buffer),
             Some(Err(err)) => {
                 return Some(Result::Err(err));
             }
@@ -35,9 +35,12 @@ where
                 return None;
             }
         };
+        let length: usize = page_infos
+            .iter()
+            .map(|p| if p.is_skip { 0 } else { p.num_values })
+            .sum();
 
         self.iter.swap_buffer(&mut buffer);
-        let length = num_values as usize;
         Some(NullArray::try_new(self.data_type.clone(), length))
     }
 }

@@ -37,3 +37,21 @@ impl<B: NativeReadBuf + ?Sized> NativeReadBuf for Box<B> {
 pub trait PageIterator {
     fn swap_buffer(&mut self, buffer: &mut Vec<u8>);
 }
+
+#[derive(Debug)]
+pub struct PageInfo {
+    pub length: usize,
+    pub num_values: usize,
+    pub is_skip: bool,
+}
+
+impl PageInfo {
+    #[inline]
+    pub fn new(length: usize, num_values: usize, is_skip: bool) -> Self {
+        Self {
+            length,
+            num_values,
+            is_skip,
+        }
+    }
+}

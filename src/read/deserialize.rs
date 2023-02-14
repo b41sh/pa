@@ -1,4 +1,4 @@
-use super::{array::*, PageIterator};
+use super::{array::*, PageInfo, PageIterator};
 use crate::with_match_primitive_type;
 use arrow::array::*;
 use arrow::datatypes::{DataType, Field, PhysicalType};
@@ -33,7 +33,7 @@ where
 
 fn deserialize_simple<'a, I: 'a>(reader: I, field: Field) -> Result<ArrayIter<'a>>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
 {
     use PhysicalType::*;
 
@@ -66,7 +66,7 @@ fn deserialize_nested<'a, I: 'a>(
     mut init: Vec<InitNested>,
 ) -> Result<NestedArrayIter<'a>>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
 {
     use PhysicalType::*;
 
@@ -168,7 +168,7 @@ pub fn column_iter_to_arrays<'a, I: 'a>(
     is_nested: bool,
 ) -> Result<ArrayIter<'a>>
 where
-    I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
+    I: Iterator<Item = Result<(Vec<PageInfo>, Vec<u8>)>> + PageIterator + Send + Sync,
 {
     if is_nested {
         Ok(Box::new(

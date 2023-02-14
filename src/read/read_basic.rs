@@ -7,7 +7,6 @@ use crate::{compression, Compression};
 
 use arrow::{
     bitmap::{Bitmap, MutableBitmap},
-    buffer::Buffer,
     error::Result,
     io::parquet::read::{init_nested, InitNested, NestedState},
     types::NativeType,
@@ -21,8 +20,9 @@ use parquet2::{
 
 fn read_swapped<T: NativeType, R: NativeReadBuf>(
     reader: &mut R,
+    offset: usize,
     length: usize,
-    buffer: &mut Vec<T>,
+    out_buf: &mut Vec<T>,
 ) -> Result<()> {
     // slow case where we must reverse bits
     let mut slice = vec![0u8; length * std::mem::size_of::<T>()];
@@ -30,44 +30,49 @@ fn read_swapped<T: NativeType, R: NativeReadBuf>(
 
     let chunks = slice.chunks_exact(std::mem::size_of::<T>());
     // machine is little endian, file is big endian
-    buffer
-        .as_mut_slice()
-        .iter_mut()
-        .zip(chunks)
-        .try_for_each(|(slot, chunk)| {
-            let a: T::Bytes = match chunk.try_into() {
-                Ok(a) => a,
-                Err(_) => unreachable!(),
-            };
-            *slot = T::from_le_bytes(a);
-            Result::Ok(())
-        })?;
+    let mut iter = out_buf.as_mut_slice().iter_mut();
+    iter.advance_by(offset).unwrap();
+    iter.zip(chunks).try_for_each(|(slot, chunk)| {
+        let a: T::Bytes = match chunk.try_into() {
+            Ok(a) => a,
+            Err(_) => unreachable!(),
+        };
+        *slot = T::from_le_bytes(a);
+        Result::Ok(())
+    })?;
     Ok(())
 }
 
 fn read_uncompressed_buffer<T: NativeType, R: NativeReadBuf>(
     reader: &mut R,
+    offset: usize,
     length: usize,
-) -> Result<Vec<T>> {
+    out_buf: &mut Vec<T>,
+) -> Result<()> {
     // it is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
     // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
-    let mut buffer = vec![T::default(); length];
+    //let mut buffer = vec![T::default(); length];
 
     if is_native_little_endian() {
-        // fast case where we can just copy the contents
-        let slice = bytemuck::cast_slice_mut(&mut buffer);
-        reader.read_exact(slice)?;
+        let byte_size = length * core::mem::size_of::<T>();
+        let out_slice = unsafe {
+            core::slice::from_raw_parts_mut(out_buf.as_mut_ptr().add(offset) as *mut u8, byte_size)
+        };
+        reader.read_exact(out_slice)?;
     } else {
-        read_swapped(reader, length, &mut buffer)?;
+        read_swapped(reader, offset, length, out_buf)?;
     }
-    Ok(buffer)
+    unsafe { out_buf.set_len(offset + length) };
+    Ok(())
 }
 
 pub fn read_buffer<T: NativeType, R: NativeReadBuf>(
     reader: &mut R,
+    offset: usize,
     length: usize,
     scratch: &mut Vec<u8>,
-) -> Result<Buffer<T>> {
+    out_buf: &mut Vec<T>,
+) -> Result<()> {
     let mut buf = vec![0u8; 1];
     let compression = Compression::from_codec(read_u8(reader, buf.as_mut_slice())?)?;
     let mut buf = vec![0u8; 4];
@@ -75,15 +80,13 @@ pub fn read_buffer<T: NativeType, R: NativeReadBuf>(
     let uncompressed_size = read_u32(reader, buf.as_mut_slice())? as usize;
 
     if compression.is_none() {
-        return Ok(read_uncompressed_buffer(reader, length)?.into());
+        return read_uncompressed_buffer(reader, offset, length, out_buf);
     }
 
-    // let mut buffer = vec![T::default(); length];
-    let mut buffer: Vec<T> = Vec::with_capacity(length);
-
     let byte_size = length * core::mem::size_of::<T>();
-    let out_slice =
-        unsafe { core::slice::from_raw_parts_mut(buffer.as_mut_ptr() as *mut u8, byte_size) };
+    let out_slice = unsafe {
+        core::slice::from_raw_parts_mut(out_buf.as_mut_ptr().add(offset) as *mut u8, byte_size)
+    };
 
     debug_assert_eq!(uncompressed_size, out_slice.len());
 
@@ -115,15 +118,16 @@ pub fn read_buffer<T: NativeType, R: NativeReadBuf>(
         reader.consume(compressed_size);
     }
 
-    unsafe { buffer.set_len(length) };
-    Ok(buffer.into())
+    unsafe { out_buf.set_len(offset + length) };
+    Ok(())
 }
 
 pub fn read_bitmap<R: NativeReadBuf>(
     reader: &mut R,
     length: usize,
     scratch: &mut Vec<u8>,
-) -> Result<Bitmap> {
+    builder: &mut MutableBitmap,
+) -> Result<()> {
     let mut buf = vec![0u8; 1];
     let compression = Compression::from_codec(read_u8(reader, buf.as_mut_slice())?)?;
     let mut buf = vec![0u8; 4];
@@ -139,7 +143,8 @@ pub fn read_bitmap<R: NativeReadBuf>(
             .by_ref()
             .take(bytes as u64)
             .read_exact(buffer.as_mut_slice())?;
-        return Bitmap::try_new(buffer, length);
+        builder.extend_from_slice(buffer.as_slice(), 0, length);
+        return Ok(());
     }
 
     // already fit in buffer
@@ -169,20 +174,23 @@ pub fn read_bitmap<R: NativeReadBuf>(
     if use_inner {
         reader.consume(compressed_size);
     }
-
-    Bitmap::try_new(buffer, length)
+    builder.extend_from_slice(buffer.as_slice(), 0, length);
+    Ok(())
 }
 
-pub fn read_validity<R: NativeReadBuf>(reader: &mut R, length: usize) -> Result<Option<Bitmap>> {
+pub fn read_validity<R: NativeReadBuf>(
+    reader: &mut R,
+    length: usize,
+    builder: &mut MutableBitmap,
+) -> Result<()> {
     let mut buf = vec![0u8; 4];
     let def_levels_len = read_u32(reader, buf.as_mut_slice())?;
     if def_levels_len == 0 {
-        return Ok(None);
+        return Ok(());
     }
     let mut def_levels = vec![0u8; def_levels_len as usize];
     reader.read_exact(def_levels.as_mut_slice())?;
 
-    let mut builder = MutableBitmap::with_capacity(length);
     let decoder = Decoder::new(def_levels.as_slice(), 1);
     for encoded in decoder {
         let encoded = encoded.unwrap();
@@ -196,7 +204,7 @@ pub fn read_validity<R: NativeReadBuf>(reader: &mut R, length: usize) -> Result<
             HybridEncoded::Rle(_, _) => unreachable!(),
         }
     }
-    Ok(Some(std::mem::take(&mut builder).into()))
+    Ok(())
 }
 
 pub fn read_validity_nested<R: NativeReadBuf>(

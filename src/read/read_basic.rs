@@ -83,9 +83,10 @@ pub fn read_buffer<T: NativeType, R: NativeReadBuf>(
         return read_uncompressed_buffer(reader, offset, length, out_buf);
     }
 
-    let byte_size = length * core::mem::size_of::<T>();
+    let val_size = core::mem::size_of::<T>();
+    let byte_size = length * val_size;
     // If there is not enough space left to store this data, allocate more space.
-    if (out_buf.capacity() - out_buf.len()) * byte_size < uncompressed_size {
+    if (out_buf.capacity() - out_buf.len()) * val_size < uncompressed_size {
         out_buf.reserve(uncompressed_size);
     }
     let out_slice = unsafe {

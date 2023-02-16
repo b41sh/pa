@@ -7,6 +7,7 @@
 
 mod array;
 pub mod deserialize;
+pub use deserialize::ArrayIter;
 mod read_basic;
 use std::io::BufReader;
 pub mod reader;

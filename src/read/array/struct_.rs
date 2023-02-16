@@ -15,10 +15,7 @@ pub struct StructIterator<'a> {
 
 impl<'a> StructIterator<'a> {
     /// Creates a new [`StructIterator`] with `iters` and `fields`.
-    pub fn new(
-        iters: Vec<NestedIters<'a>>,
-        fields: Vec<Field>,
-    ) -> Self {
+    pub fn new(iters: Vec<NestedIters<'a>>, fields: Vec<Field>) -> Self {
         assert_eq!(iters.len(), fields.len());
         Self { iters, fields }
     }

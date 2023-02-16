@@ -34,6 +34,8 @@ impl<'a, V> DynIter<'a, V> {
     }
 }
 
+pub type ArrayIter<'a> = DynIter<'a, Result<Box<dyn Array>>>;
+
 /// [`NestedIter`] is a wrapper iterator used to remove the `NestedState` from inner iterator
 /// and return only the `Box<dyn Array>`
 #[derive(Debug)]
@@ -211,7 +213,7 @@ pub fn column_iter_to_arrays<'a, I: 'a>(
     leaves: Vec<ColumnDescriptor>,
     field: Field,
     is_nested: bool,
-) -> Result<DynIter<'a, Result<Box<dyn Array>>>>
+) -> Result<ArrayIter<'a>>
 where
     I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
 {

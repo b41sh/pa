@@ -4,7 +4,6 @@ use super::{
     read_basic::{read_u32, read_u64},
     NativeReadBuf, PageIterator,
 };
-use arrow::bitmap::Bitmap;
 use arrow::datatypes::{DataType, PhysicalType, Schema};
 use arrow::error::Result;
 use arrow::io::ipc::read::deserialize_schema;
@@ -31,7 +30,6 @@ pub struct NativeReader<R: NativeReadBuf> {
     page_metas: Vec<PageMeta>,
     current_page: usize,
     scratch: Vec<u8>,
-    skip_pages: Option<Bitmap>,
 }
 
 impl<R: NativeReadBuf> NativeReader<R> {
@@ -41,7 +39,6 @@ impl<R: NativeReadBuf> NativeReader<R> {
             page_metas,
             current_page: 0,
             scratch,
-            skip_pages: None,
         }
     }
 
@@ -51,11 +48,6 @@ impl<R: NativeReadBuf> NativeReader<R> {
 
     pub fn current_page(&self) -> usize {
         self.current_page
-    }
-
-    pub fn set_skip_pages(&mut self, skip_pages: Bitmap) {
-        assert_eq!(self.page_metas.len(), skip_pages.len());
-        self.skip_pages = Some(skip_pages)
     }
 }
 
@@ -69,7 +61,6 @@ impl<R: NativeReadBuf + std::io::Seek> Iterator for NativeReader<R> {
     type Item = Result<(u64, Vec<u8>)>;
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        println!("nth 2222222222 n={:?}", n);
         let mut i = 0;
         let mut length = 0;
         while i < n {
@@ -84,10 +75,12 @@ impl<R: NativeReadBuf + std::io::Seek> Iterator for NativeReader<R> {
         if i < n {
             return None;
         }
-        println!("length={:?}", length);
         if length > 0 {
-            if let Some(err) = self.page_reader
-                .seek(SeekFrom::Current(length as i64)).err() {
+            if let Some(err) = self
+                .page_reader
+                .seek(SeekFrom::Current(length as i64))
+                .err()
+            {
                 return Some(Result::Err(err.into()));
             }
         }
@@ -106,19 +99,6 @@ impl<R: NativeReadBuf + std::io::Seek> Iterator for NativeReader<R> {
         }
         self.current_page += 1;
         Some(Ok((page_meta.num_values, buffer)))
-    }
-}
-
-impl<R: NativeReadBuf + std::io::Seek> NativeReader<R> {
-    pub fn skip_page(&mut self) -> Result<()> {
-        if self.current_page == self.page_metas.len() {
-            return Ok(());
-        }
-        let page_meta = &self.page_metas[self.current_page];
-        self.page_reader
-            .seek(SeekFrom::Current(page_meta.length as i64))?;
-        self.current_page += 1;
-        Ok(())
     }
 }
 

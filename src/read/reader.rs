@@ -102,6 +102,19 @@ impl<R: NativeReadBuf + std::io::Seek> Iterator for NativeReader<R> {
     }
 }
 
+impl<R: NativeReadBuf + std::io::Seek> NativeReader<R> {
+    pub fn skip_page(&mut self) -> Result<()> {
+        if self.current_page == self.page_metas.len() {
+            return Ok(());
+        }
+        let page_meta = &self.page_metas[self.current_page];
+        self.page_reader
+            .seek(SeekFrom::Current(page_meta.length as i64))?;
+        self.current_page += 1;
+        Ok(())
+    }
+}
+
 pub fn read_meta<Reader: Read + Seek>(reader: &mut Reader) -> Result<Vec<ColumnMeta>> {
     // EOS(8 bytes) + meta_size(4 bytes) = 12 bytes
     reader.seek(SeekFrom::End(-12))?;

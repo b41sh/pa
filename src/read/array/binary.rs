@@ -47,6 +47,20 @@ where
 {
     type Item = Result<BinaryArray<O>>;
 
+    //fn advance_by(&mut self, n: usize) -> std::io::Result<()> {
+    //fn advance_by(&mut self, n: usize) -> std::io::Result<(), usize> {
+    fn advance_by(&mut self, n: usize) -> std::result::Result<(), usize> {
+        println!("------this is advance_by");
+        //self.iter.advance_by(n)
+        todo!()
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        println!("----------nth");
+
+        todo!()
+    }
+
     fn next(&mut self) -> Option<Self::Item> {
         let (num_values, buffer) = match self.iter.next() {
             Some(Ok((num_values, buffer))) => (num_values, buffer),

@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
-use crate::read::{read_basic::*, BufReader, PageIterator};
-use arrow::array::BooleanArray;
+use crate::read::{read_basic::*, BufReader, PageIterator, SkipIterator};
+use arrow::array::{Array, BooleanArray};
 use arrow::datatypes::DataType;
 use arrow::error::Result;
 use arrow::io::parquet::read::{InitNested, NestedState};
@@ -36,10 +36,12 @@ impl<I> Iterator for BooleanIter<I>
 where
     I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
 {
-    type Item = Result<BooleanArray>;
+    //type Item = Result<BooleanArray>;
+    type Item = Result<Box<dyn Array>>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let (num_values, buffer) = match self.iter.next() {
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        println!("----------nth 111111111");
+        let (num_values, buffer) = match self.iter.nth(n) {
             Some(Ok((num_values, buffer))) => (num_values, buffer),
             Some(Err(err)) => {
                 return Some(Result::Err(err));
@@ -70,11 +72,23 @@ where
         let mut buffer = reader.into_inner().into_inner();
         self.iter.swap_buffer(&mut buffer);
 
-        Some(BooleanArray::try_new(
+        let array = match BooleanArray::try_new(
             self.data_type.clone(),
             values,
             validity,
-        ))
+        ) {
+            Ok(array) => array,
+            Err(err) => {
+                return Some(Result::Err(err));
+            }
+        };
+
+        Some(Ok(Box::new(array) as Box<dyn Array>))
+    }
+
+    fn next(&mut self) -> Option<Self::Item> {
+        println!("this is next()");
+        self.nth(0)
     }
 }
 
@@ -114,10 +128,11 @@ impl<I> Iterator for BooleanNestedIter<I>
 where
     I: Iterator<Item = Result<(u64, Vec<u8>)>> + PageIterator + Send + Sync,
 {
-    type Item = Result<(NestedState, BooleanArray)>;
+    type Item = Result<(NestedState, Box<dyn Array>)>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let (num_values, buffer) = match self.iter.next() {
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        println!("----------nth 111111111");
+        let (num_values, buffer) = match self.iter.nth(n) {
             Some(Ok((num_values, buffer))) => (num_values, buffer),
             Some(Err(err)) => {
                 return Some(Result::Err(err));
@@ -151,6 +166,11 @@ where
                 return Some(Result::Err(err));
             }
         };
-        Some(Ok((nested, array)))
+        Some(Ok((nested, Box::new(array) as Box<dyn Array>)))
+    }
+
+    fn next(&mut self) -> Option<Self::Item> {
+        println!("this is next()");
+        self.nth(0)
     }
 }

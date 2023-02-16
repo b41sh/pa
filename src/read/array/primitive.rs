@@ -2,6 +2,7 @@ use std::io::Cursor;
 use std::marker::PhantomData;
 
 use crate::read::{read_basic::*, BufReader, PageIterator};
+use arrow::array::Array;
 use arrow::datatypes::DataType;
 use arrow::error::Result;
 use arrow::io::parquet::read::{InitNested, NestedState};
@@ -43,10 +44,12 @@ where
     T: NativeType,
     Vec<u8>: TryInto<T::Bytes>,
 {
-    type Item = Result<PrimitiveArray<T>>;
+    //type Item = Result<PrimitiveArray<T>>;
+    type Item = Result<Box<dyn Array>>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let (num_values, buffer) = match self.iter.next() {
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        println!("----------nth");
+        let (num_values, buffer) = match self.iter.nth(n) {
             Some(Ok((num_values, buffer))) => (num_values, buffer),
             Some(Err(err)) => {
                 return Some(Result::Err(err));
@@ -77,11 +80,21 @@ where
         let mut buffer = reader.into_inner().into_inner();
         self.iter.swap_buffer(&mut buffer);
 
-        Some(PrimitiveArray::<T>::try_new(
+        let array = match PrimitiveArray::<T>::try_new(
             self.data_type.clone(),
             values,
             validity,
-        ))
+        ) {
+            Ok(array) => array,
+            Err(err) => {
+                return Some(Result::Err(err));
+            }
+        };
+        Some(Ok(Box::new(array) as Box<dyn Array>))
+    }
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.nth(0)
     }
 }
 
@@ -127,10 +140,12 @@ where
     T: NativeType,
     Vec<u8>: TryInto<T::Bytes>,
 {
-    type Item = Result<(NestedState, PrimitiveArray<T>)>;
+    //type Item = Result<(NestedState, PrimitiveArray<T>)>;
+    type Item = Result<(NestedState, Box<dyn Array>)>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let (num_values, buffer) = match self.iter.next() {
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        println!("this is int nth n={:?}", n);
+        let (num_values, buffer) = match self.iter.nth(n) {
             Some(Ok((num_values, buffer))) => (num_values, buffer),
             Some(Err(err)) => {
                 return Some(Result::Err(err));
@@ -165,6 +180,11 @@ where
             }
         };
 
-        Some(Ok((nested, array)))
+        Some(Ok((nested, Box::new(array) as Box<dyn Array>)))
+    }
+
+    fn next(&mut self) -> Option<Self::Item> {
+        println!("----int next");
+        self.nth(0)
     }
 }

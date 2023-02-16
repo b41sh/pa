@@ -68,19 +68,33 @@ impl<R: NativeReadBuf> PageIterator for NativeReader<R> {
 impl<R: NativeReadBuf + std::io::Seek> Iterator for NativeReader<R> {
     type Item = Result<(u64, Vec<u8>)>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.current_page < self.page_metas.len() {
-            if let Some(skip_pages) = &self.skip_pages {
-                let is_skip = unsafe { skip_pages.get_bit_unchecked(self.current_page) };
-                if is_skip {
-                    if let Some(err) = self.skip_page().err() {
-                        return Some(Result::Err(err));
-                    }
-                    continue;
-                }
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        println!("nth 2222222222 n={:?}", n);
+        let mut i = 0;
+        let mut length = 0;
+        while i < n {
+            if self.current_page == self.page_metas.len() {
+                break;
             }
-            break;
+            let page_meta = &self.page_metas[self.current_page];
+            length += page_meta.length;
+            i += 1;
+            self.current_page += 1;
         }
+        if i < n {
+            return None;
+        }
+        println!("length={:?}", length);
+        if length > 0 {
+            if let Some(err) = self.page_reader
+                .seek(SeekFrom::Current(length as i64)).err() {
+                return Some(Result::Err(err.into()));
+            }
+        }
+        self.next()
+    }
+
+    fn next(&mut self) -> Option<Self::Item> {
         if self.current_page == self.page_metas.len() {
             return None;
         }

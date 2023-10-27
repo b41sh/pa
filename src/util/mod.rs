@@ -23,6 +23,9 @@ mod byte_writer;
 pub mod env;
 pub mod memory;
 
+pub mod bench_util;
+pub mod lexical;
+
 pub use bit_util::*;
 pub use byte_writer::ByteWriter;
 
